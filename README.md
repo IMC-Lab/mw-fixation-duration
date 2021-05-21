@@ -160,7 +160,7 @@ trace_plot(ucm)
 ggsave('plots/UCM-trace.png', width=10, height=3)
 ```
 
-<img src="demo/trace_plot-1.png" style="display: block; margin: auto;" />
+<img src="plots/UCM-trace.png" style="display: block; margin: auto;" />
 
 ## Custom parameter settings
 
@@ -176,9 +176,10 @@ ucm <- UCM(N_timer=15, t_timer=.3,
     run(until=5)
 
 trace_plot(ucm)
+ggsave('plots/UCM-trace2.png', width=10, height=3)
 ```
 
-<img src="demo/custom_parameters-1.png" style="display: block; margin: auto;" />
+<img src="plots/UCM-trace2.png" style="display: block; margin: auto;" />
 
 ## Simulating many trials in parallel
 
@@ -256,7 +257,7 @@ get_fixations(ucms) %>%
 ggsave('plots/UCM-cancellations.png', width=6, height=4)
 ```
 
-<img src="demo/cancellation_hist-1.png" style="display: block; margin: auto;" />
+<img src="plots/UCM-cancellations.png" style="display: block; margin: auto;" />
 
 ## Local Rate Modulation
 
@@ -300,7 +301,7 @@ trace_plot(ucm) +
 ggsave('plots/UCM-local-modulation.png', width=10, height=3)
 ```
 
-<img src="demo/modulation_plot-1.png" style="display: block; margin: auto;" />
+<img src="plots/UCM-local-modulation.png" style="display: block; margin: auto;" />
 
 ## Local Cancellation
 
@@ -339,7 +340,7 @@ trace_plot(ucm) +
 ggsave('plots/UCM-local-cancellation.png', width=10, height=3)
 ```
 
-<img src="demo/local_cancellation-1.png" style="display: block; margin: auto;" />
+<img src="plots/UCM-local-cancellation.png" style="display: block; margin: auto;" />
 
 ## Conclusions
 
