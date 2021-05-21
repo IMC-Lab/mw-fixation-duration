@@ -4,7 +4,6 @@ output:
   pdf_document: default
   md_document:
     variant: gfm
-    preserve_yaml: TRUE
 ---
 
 ```{r setup, include=FALSE, cache=FALSE}
