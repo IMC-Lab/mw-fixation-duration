@@ -97,7 +97,20 @@ trace_plot(ucm)
 ggsave('plots/UCM-trace.png', width=10, height=3)
 ```
 
+## Custom parameter settings
+We're also not limited to the default parameter settings. We can set
+custom parameters like so:
 
+```{r custom_parameters}
+ucm <- UCM(N_timer=15, t_timer=.3,
+           N_labile=20, t_labile=.2,
+           N_nonlabile=20, t_nonlabile=.05,
+           N_motor=30, t_motor=.02,
+           N_execution=30, t_execution=.015) %>%
+    run(until=5)
+
+trace_plot(ucm)
+```
 
 
 ## Simulating many trials in parallel
