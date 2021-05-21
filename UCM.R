@@ -1,7 +1,3 @@
-library(simmer)
-library(dplyr)
-library(tidyr)
-
 #' Create a trajectory with a discrete state random walk from 0 to N.
 #'
 #' @param .trj The trajectory to add a random walk to. By default, creates a new blank trajectory.
@@ -27,7 +23,7 @@ randomWalk <- function(.trj=trajectory(), env, N, t, modulation=TRUE) {
         stop('Cannot create a random walk with N<0 states.')
     if (t <= 0)
         stop('Cannot create a random walk with mean duration t<0.')
-
+    
     ## Define a function to randomly draw wait times.
     ## If modulation is true, this time is multiplied by the global
     ## attribute 'modulation'.
@@ -70,6 +66,7 @@ randomWalk <- function(.trj=trajectory(), env, N, t, modulation=TRUE) {
 #' @param t_nonlabile The mean duration of the nonlabile stage (> 0).
 #' @param t_motor The mean duration of the motor programming stage (> 0).
 #' @param t_execution The mean duration of the saccade execution stage (> 0).
+#' @param modulation The starting modulation of the timer, labile stage, and nonlabile stage.
 #' @return A simmer environment simulating the UCM model.
 #' @examples
 #' ## Run the baseline model for 5 seconds
@@ -79,11 +76,14 @@ randomWalk <- function(.trj=trajectory(), env, N, t, modulation=TRUE) {
 #' UCM(N_motor=5, N_execution=5, t_timer=.5) %>% run(until=10)
 #' @export
 UCM <- function(N_timer=14, N_labile=14, N_nonlabile=14, N_motor=14, N_execution=14,
-                t_timer=.25, t_labile=.175, t_nonlabile=.07, t_motor=.03, t_execution=.02) {
+                t_timer=.25, t_labile=.175, t_nonlabile=.07, t_motor=.03, t_execution=.02,
+                modulation=1.0) {
     if (!all(c(N_timer, N_labile, N_nonlabile, N_motor, N_execution) > 0))
         stop('Cannot create UCM with N < 0')
     if (!all(c(t_timer, t_labile, t_nonlabile, t_motor, t_execution) > 0))
         stop('Cannot create UCM with t < 0')
+    if (modulation <= 0 | modulation > 1)
+        stop('Cannot create UCM with modulation <= 0 or > 1')
     
     s <- simmer()
     
@@ -143,7 +143,7 @@ UCM <- function(N_timer=14, N_labile=14, N_nonlabile=14, N_motor=14, N_execution
     
     s %>%
         add_generator('init.', trajectory() %>%
-                               set_global('modulation', 1) %>%
+                               set_global('modulation', modulation) %>%
                                activate('timer.'), at(0)) %>%
         add_generator('timer.', timer, when_activated(), mon=2) %>%
         add_generator('labile.', labile, when_activated(), mon=2) %>%
@@ -336,15 +336,15 @@ cancellations_hist <- function(ucm, max_duration=1.2, binwidth=0.06) {
 #' @param x the vector of values to discretize
 #' @param min the minimum value of allowed values in x
 #' @param max the maximum value of allowed values in x
-#' @param binsize the width of the distribution's bins
+#' @param binwidth the width of the distribution's bins
 #' @return a dataframe with the following columns, where each row corresponds to a bin:
 #'  - lower: the lower bound of the bin
 #'  - upper: the upper bound of the bin
 #'  - mid: the midpoint of the bin
 #'  - count: the number of data points in this bin
 #'  - p: the probability of finding a data point in this bin
-discretize <- function(x, min=0, max=1.2, binsize=.06) {
-    breaks <- seq(min, max, by=binsize)
+discretize <- function(x, min=0, max=1.2, binwidth=.06) {
+    breaks <- seq(min, max, by=binwidth)
     x <- x[x >= min & x <= max]
     h <- hist(x, breaks=breaks, plot=FALSE)
     data.frame(lower=h$breaks[-length(h$breaks)], upper=h$breaks[-1], mid=h$mids,
@@ -364,7 +364,7 @@ discretize <- function(x, min=0, max=1.2, binsize=.06) {
 #' @param delta a small fraction (0 < delta << 1) added to the histogram
 #' of xhat to ensure that xhat places non-zero probability at each bin.
 #' This avoids taking log(0), creating infinite log likelihoods.
-#' @param ... optional arguments to discretize (min, max, binsize)
+#' @param ... optional arguments to discretize (min, max, binwidth)
 #' @return the approximate log likelihood of x given the model that produced xhat
 LL_discrete <- function(x, xhat, delta=1e-10, ...) {
     x.disc <- do.call(discretize, list(x, ...))
@@ -381,7 +381,7 @@ LL_discrete <- function(x, xhat, delta=1e-10, ...) {
 #'
 #' @param x a vector of raw data
 #' @param xhat a vector of simulated data from a model
-#' @param ... optional arguments to discretize (min, max, binsize)
+#' @param ... optional arguments to discretize (min, max, binwidth)
 #' @return the approximate negative log likelihood of x
 #' given the model that produced xhat
 NL_discrete <- function(x, xhat, ...) {

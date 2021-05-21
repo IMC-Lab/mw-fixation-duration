@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(fig.path="plots/", fig.align = 'center',
+knitr::opts_chunk$set(fig.path="demo/", fig.align = 'center',
                       message=FALSE, warning=FALSE, cache=TRUE,
                       echo=TRUE, results='hold', fig.show='hold')
 ```
@@ -209,7 +209,7 @@ Then as before, we simply create an instance of the UCM, add a
 generator to initialize the starting state of the stimulus to on, add
 a generator to turn off the stimulus after two seconds, and run the model:
 
-```{r}
+```{r local_cancellation}
 ucm <- UCM() %>%
     add_generator('stim.', trajectory() %>% set_global('stimulus', 1), at(0)) %>%
     add_generator('stim-off.', stimulus, at(2), mon=2) %>%
