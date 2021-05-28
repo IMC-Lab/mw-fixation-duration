@@ -347,8 +347,14 @@ discretize <- function(x, min=0, max=1.2, binwidth=.06) {
     breaks <- seq(min, max, by=binwidth)
     x <- x[x >= min & x <= max]
     h <- hist(x, breaks=breaks, plot=FALSE)
-    data.frame(lower=h$breaks[-length(h$breaks)], upper=h$breaks[-1], mid=h$mids,
-               count=h$counts, p=h$counts/length(x))
+    d <- data.frame(lower=h$breaks[-length(h$breaks)], upper=h$breaks[-1], mid=h$mids,
+                    count=h$counts, p=h$counts/length(x))
+
+    ## set all probabilities to 0 if x is empty
+    if (length(x) == 0)
+        d$p <- 0
+
+    d
 }
 
 
@@ -366,10 +372,10 @@ discretize <- function(x, min=0, max=1.2, binwidth=.06) {
 #' This avoids taking log(0), creating infinite log likelihoods.
 #' @param ... optional arguments to discretize (min, max, binwidth)
 #' @return the approximate log likelihood of x given the model that produced xhat
-LL_discrete <- function(x, xhat, delta=1e-10, ...) {
-    x.disc <- do.call(discretize, list(x, ...))
-    xhat.disc <- do.call(discretize, list(xhat, ...))
-    sum(x.disc$count * log(xhat.disc$p+delta))
+LL_discrete <- function(x, xhat, delta=1e-250, ...) {
+    x.disc <- discretize(x, ...)
+    xhat.disc <- discretize(xhat, ...)
+    sum(x.disc$count * log(xhat.disc$p + delta))
 }
 
 #' Obtain the approximate negative log likelihood of x given
@@ -384,77 +390,6 @@ LL_discrete <- function(x, xhat, delta=1e-10, ...) {
 #' @param ... optional arguments to discretize (min, max, binwidth)
 #' @return the approximate negative log likelihood of x
 #' given the model that produced xhat
-NL_discrete <- function(x, xhat, ...) {
-    -do.call(LL_discrete, x, xhat, ...)
-}
-
-
-#' Return a function to run the UCM and calculate its approximate
-#' Log Likelihood (LL) with respect to the data (fixation durations) x.
-#'
-#' @param x the data for which to calculate the NLL
-#' @param N_trials the number of UCM instances to run
-#' @param trial_duration the length of time to run each instance of the UCM
-#' @param parallel run each instance of the UCM as a separate process?
-#' @param save if TRUE, the returned function writes the simulated fixations to a file
-#' which can be used to amortize computational load
-#' @param dir if save==TRUE, the directory in which to save files
-#' @param ... optional arguments passed to LL_discrete and to discretize.
-#' @return a function taking N_states, t_timer, t_labile, t_nonlabile,
-#' t_motor, and t_execution as arguments (see UCM). Calling this function
-#' will run N_trials instances of UCM for trial_duration seconds, and return
-#' the LL of the data given the simulated data as a list under the name Score
-#' (for use with ParBayesOptimization).
-LL.UCM <- function (x, N_trials, trial_duration, parallel=TRUE, save=TRUE, dir='.', ...) {
-    if (parallel) {
-        function (N_states, t_timer, t_labile, t_nonlabile) {
-            fname <- paste0(dir, '/ucm_sim_', N_trials, '_', trial_duration, '_',
-                    N_states, '_', t_timer, '_', t_labile, '_',
-                    t_nonlabile, '.csv')
-            
-            if (file.exists(fname)) {
-                fix <- read.csv(fname)
-            } else {
-                fix <- 1:N_trials %>%
-                    mclapply(function (i) {
-                        UCM(N_timer=N_states, N_labile=N_states, N_nonlabile=N_states,
-                            N_motor=N_states, N_execution=N_states,
-                            t_timer=t_timer, t_labile=t_labile, t_nonlabile=t_nonlabile) %>%
-                            run(trial_duration) %>%
-                            wrap()
-                    }) %>%
-                    get_fixations()
-            }
-            
-            if (save)
-                write.csv(fix, fname)
-
-            list(Score=do.call(LL_discrete, list(x, fix$activity_time, ...)))
-        }            
-    } else {
-        function (N_states, t_timer, t_labile, t_nonlabile) {
-            fname <- paste0(dir, '/ucm_sim_', N_trials, '_', trial_duration, '_',
-                    N_states, '_', t_timer, '_', t_labile, '_',
-                    t_nonlabile, '.csv')
-            
-            if (file.exists(fname)) {
-                fix <- read.csv(fname)
-            } else {
-                fix <- 1:N_trials %>%
-                    lapply(function (i) {
-                        UCM(N_timer=N_states, N_labile=N_states, N_nonlabile=N_states,
-                            N_motor=N_states, N_execution=N_states,
-                            t_timer=t_timer, t_labile=t_labile, t_nonlabile=t_nonlabile) %>%
-                            run(trial_duration) %>%
-                            wrap()
-                    }) %>%
-                    get_fixations()
-            }
-            
-            if (save)
-                write.csv(fix, fname)
-            
-            list(Score=do.call(LL_discrete, list(x, fix$activity_time, ...)))
-        }
-    }
+NLL_discrete <- function(x, xhat, ...) {
+    -LL_discrete(x, xhat, ...)
 }
