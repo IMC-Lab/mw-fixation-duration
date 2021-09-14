@@ -1,3 +1,4 @@
+library(readxl)
 library(httr)
 library(simmer)
 library(dplyr)
@@ -18,16 +19,16 @@ source('UCM-optim.R')
 options(mc.cores=parallel::detectCores())
 
 ## Set optimization parameters
-N_TRIALS <- 2500          ## number of UCM trials to simulate per epoch to estimate LL
-MIN_FIXDUR <- 0.08        ## only keep fixations over this limit
-MAX_FIXDUR <- 2           ## only keep fixations under this limit
-BINWIDTH <- 0.04          ## the width of histogram bins to calculate LL
-TRIAL_DUR <- 10           ## trial length (in seconds)
-INIT_POINTS <- 16         ## number of points to initialize optimization
-KAPPA <- 5.0              ## importance of uncertainty in optimization
+T_MOTOR <- .03           ## duration of motor planning stage (fixed parameter)
+T_EXECUTION <- .04       ## duration of saccade execution (fixed parameter)
+N_TRIALS <- 2500         ## number of UCM trials to simulate per epoch to estimate LL
+MIN_FIXDUR <- 0.05       ## only keep fixations over this limit
+MAX_FIXDUR <- 2          ## only keep fixations under this limit
+BINWIDTH <- 0.05         ## the width of histogram bins to calculate LL
+TRIAL_DUR <- 15          ## trial length (in seconds)
+INIT_POINTS <- 16        ## number of points to initialize optimization
+KAPPA <- 5.0             ## importance of uncertainty in optimization
 UTILITY_THRESH <- 0.001   ## stop optimization when utility is smaller than this value
-T_MOTOR <- .03
-T_EXECUTION <- .04
 bounds.separate <- list(N_states=c(2L, 30L),
                         t_timer=c(.1, .4),
                         t_labile=c(.1, .4),
@@ -35,30 +36,24 @@ bounds.separate <- list(N_states=c(2L, 30L),
 bounds.rate_mod <- c(bounds.separate, list(modulation=c(0.25, 1)))
 bounds.N_mod <- c(bounds.rate_mod, list(N_mod=c(0.25, 1)))
 
+
 ## Load data
-GET('https://osf.io/fpqsj/download', write_disk(tf <- tempfile(fileext = ".csv")))
-fix_data <- read.csv(tf, header=TRUE) %>%
-    tibble %>%
-    mutate(fixdur=duration/1000,
-           attention=factor(attention, levels=c('On-task', 'MW: Unintentional', 'MW: Intentional')),
-           Attention=factor(Attention, levels=c('On-task', 'Mind-wandering')),
-           mw=ifelse(Attention == 'Mind-wandering', 1, 0),
+fix_data <- read_excel('data/MWScenesTriad_datat.xlsx') %>%
+    mutate(fixdur=fixdur/1000,
+           Image_Duration=Image_Duration/1000,
+           ID=factor(ID),
+           proberesp=factor(proberesp, levels=c('notmw', 'mw')),
+           mw=ifelse(proberesp == 'mw', 1, 0),
            type='Data') %>%
-    rename(proberesp=Attention) %>%
-    ## filter as per the manuscript
-    drop_na() %>%
-    filter(fixdur >= MIN_FIXDUR & fixdur <= MAX_FIXDUR) %>%
-    filter(x_pos > 0 & x_pos < 1024) %>%
-    filter(y_pos > 0 & y_pos < 768) %>%
-    filter(attention != 'MW: Intentional')
+    filter(proberesp != 'noprobe' & `5sBins` <= 15 &
+           fixdur >= MIN_FIXDUR & fixdur <= MAX_FIXDUR)
 
 fix_data.on_task <- fix_data[fix_data$mw == 0,]
 fix_data.mw <- fix_data[fix_data$mw == 1,]
 
 ## Plot data
-mw_plot('Zhang et al. (2021) Raw Data', fix_data, BINWIDTH)
-ggsave('plots/hist_zhang_2021.png', width=8, height=6)
-
+mw_plot('Krasich et al. (2018) Raw Data', fix_data, BINWIDTH)
+ggsave('plots/hist_krasich_2018_exp1.png', width=8, height=6)
 
 
 ## Define log likelihood functions
@@ -83,20 +78,21 @@ fix_later <- fix_data %>% group_by(mw) %>%
 fix_later.on_task <- fix_later %>% filter(mw==0)
 fix_later.mw <- fix_later %>% filter(mw==1)
 
+
 ##################################################################################################
 ##                 Use this code to optimze on-task & mw trials separately
 ##################################################################################################
 
-bopt.on_task <- optimize('zhang_2021_on_task.rds', LL.on_task, bounds.separate)
+bopt.on_task <- optimize('krasich_2018_on_task.rds', LL.on_task, bounds.separate)
 params.on_task <- getBestPars(bopt.on_task)
 params.on_task
 
-bopt.mw <- optimize('zhang_2021_mw.rds', LL.mw, bounds.separate)
+bopt.mw <- optimize('krasich_2018_mw.rds', LL.mw, bounds.separate)
 params.mw <- getBestPars(bopt.mw)
 params.mw
 
 
-ucm.on_task <- mclapply(1:10000, function(i) {
+fix_ucm.on_task <- mclapply(1:10000, function(i) {
     UCM(N_timer=params.on_task$N_states, N_labile=params.on_task$N_states,
         N_nonlabile=params.on_task$N_states, N_motor=params.on_task$N_states,
         N_execution=params.on_task$N_states, t_timer=params.on_task$t_timer,
@@ -107,7 +103,7 @@ ucm.on_task <- mclapply(1:10000, function(i) {
 }) %>% get_fixations() %>%
     mutate(mw=0, fixdur=duration, type='UCM')  %>%
     filter(fixdur >= MIN_FIXDUR & fixdur <= MAX_FIXDUR)
-ucm.mw <- mclapply(1:10000, function(i) {
+fix_ucm.mw <- mclapply(1:10000, function(i) {
     UCM(N_timer=params.mw$N_states, N_labile=params.mw$N_states,
         N_nonlabile=params.mw$N_states, N_motor=params.mw$N_states,
         N_execution=params.mw$N_states, t_timer=params.mw$t_timer,
@@ -129,11 +125,11 @@ fix <- bind_rows(fix_data %>% select(type, mw, fixdur),
     nest(data=c(fixdur)) %>%
     mutate(hist=map(data, ~ discretize(.x$fixdur, MIN_FIXDUR, MAX_FIXDUR, BINWIDTH)))
 
-fit_plot('Zhang et al. (2021) Model Fits (Separate)', fix, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH)
-ggsave('plots/fit_zhang_2021_separate.png', width=8, height=4)
+fit_plot('Krasich et al. (2018) Model Fits (Separate)', fix, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/fit_krasich_2018_separate.png', width=8, height=4)
 
-reciprobit_plot('Zhang et al. (2021) Model Fits (Separate)', fix, min=MIN_FIXDUR)
-ggsave('plots/reciprobit_zhang_2021_separate.png', width=16, height=8)
+reciprobit_plot('Krasich et al. (2018) Model Fits (Separate)', fix, min=MIN_FIXDUR)
+ggsave('plots/reciprobit_krasich_2018_separate.png', width=16, height=8)
 
 
 ## Calculate log-likelihood of UCM and LATER
@@ -145,10 +141,10 @@ LL_discrete(fix_data.on_task$fixdur, fix_later.on_task$fixdur, min=MIN_FIXDUR, m
 
 
 ##################################################################################################
-##                       Use this code to optimze w/ rate modulation
+##             Use this code to optimze on-task & mw trials with rate modulation
 ##################################################################################################
 
-bopt.rate_mod <- optimize('zhang_2021_rate_mod.rds', LL.rate_mod, bounds.rate_mod)
+bopt.rate_mod <- optimize('krasich_2018_rate_mod.rds', LL.rate_mod, bounds.rate_mod)
 params.rate_mod <- getBestPars(bopt.rate_mod)
 params.rate_mod
 
@@ -185,11 +181,11 @@ fix <- bind_rows(fix_data %>% select(type, mw, fixdur),
     nest(data=c(fixdur)) %>%
     mutate(hist=map(data, ~ discretize(.x$fixdur, MIN_FIXDUR, MAX_FIXDUR, BINWIDTH)))
 
-fit_plot('Zhang et al. (2021) Model Fits (Rate modulation)', fix, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH)
-ggsave('plots/fit_zhang_2021_rate_mod.png', width=8, height=4)
+fit_plot('Krasich et al. (2018) Model Fits (Rate modulation)', fix, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/fit_krasich_2018_rate_mod.png', width=8, height=4)
 
-reciprobit_plot('Zhang et al. (2021) Model Fits (Rate modulation)', fix, min=MIN_FIXDUR)
-ggsave('plots/reciprobit_zhang_2021_rate_mod.png', width=16, height=8)
+reciprobit_plot('Krasich et al. (2018) Model Fits (Rate modulation)', fix, min=MIN_FIXDUR)
+ggsave('plots/reciprobit_krasich_2018_rate_mod.png', width=16, height=8)
 
 
 ## Calculate log-likelihood of UCM and LATER
@@ -201,10 +197,10 @@ LL_discrete(fix_data.on_task$fixdur, fix_later.on_task$fixdur, min=MIN_FIXDUR, m
 
 
 ##################################################################################################
-##               Use this code to optimze using rate modulation & N modulation
+##        Use this code to optimze on-task & mw trials with rate modulation & N modulation
 ##################################################################################################
 
-bopt.N_mod <- optimize('zhang_2021_N_mod.rds', LL.N_mod, bounds.N_mod)
+bopt.N_mod <- optimize('krasich_2018_N_mod.rds', LL.jointN_mod, bounds.N_mod)
 params.N_mod <- getBestPars(bopt.N_mod)
 params.N_mod
 
@@ -250,11 +246,11 @@ fix <- bind_rows(fix_data %>% select(type, mw, fixdur),
     nest(data=c(fixdur)) %>%
     mutate(hist=map(data, ~ discretize(.x$fixdur, MIN_FIXDUR, MAX_FIXDUR, BINWIDTH)))
 
-fit_plot('Zhang et al. (2021) Model Fits (N modulation)', fix, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH)
-ggsave('plots/fit_zhang_2021_N_mod.png', width=8, height=4)
+fit_plot('Krasich et al. (2018) Model Fits (N modulation)', fix, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/fit_krasich_2018_N_mod.png', width=8, height=4)
 
-reciprobit_plot('Zhang et al. (2021) Model Fits (N modulation)', fix, min=MIN_FIXDUR)
-ggsave('plots/reciprobit_zhang_2021_N_mod.png', width=16, height=8)
+reciprobit_plot('Krasich et al. (2018) Model Fits (N modulation)', fix, min=MIN_FIXDUR)
+ggsave('plots/reciprobit_krasich_2018_N_mod.png', width=16, height=8)
 
 
 ## Calculate log-likelihood of UCM and LATER
@@ -263,8 +259,6 @@ LL_discrete(fix_data.on_task$fixdur, fix_ucm.on_task$fixdur, min=MIN_FIXDUR, max
 
 LL_discrete(fix_data.on_task$fixdur, fix_later.on_task$fixdur, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH, delta=1/N_TRIALS) +
     LL_discrete(fix_data.mw$fixdur, fix_later.mw$fixdur, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH, delta=1/N_TRIALS)
-
-
 
 summary(glm(n_cancellations ~ factor(mw), fix_ucm, family='poisson'))
 
@@ -276,9 +270,8 @@ ggplot(fix_ucm, aes(x=n_cancellations, fill=as.factor(mw))) +
     scale_fill_jco(name='Probe Response', labels=c('On-task', 'Mind-wandering')) +
     xlab('Number of Cancellations') + ylab('Proportion') +
     theme_bw()
-ggsave('plots/cancellations_zhang.png', width=8, height=6)
+ggsave('plots/cancellations_krasich.png', width=8, height=6)
 
-library(viridis)
 ggplot(fix_ucm, aes(x=duration, group=n_cancellations, fill=factor(n_cancellations))) +
     scale_fill_viridis(name='Cancellations', discrete=TRUE) +
     geom_histogram(aes(y=after_stat(count / sum(count))), binwidth=0.06, data=fix_ucm.on_task) +
@@ -287,4 +280,16 @@ ggplot(fix_ucm, aes(x=duration, group=n_cancellations, fill=factor(n_cancellatio
     facet_grid( ~ mw, labeller=labeller(mw=c('0'='On-task', '1'='Mind-wandering'))) +
     xlab('Fixation Duration (s)') + ylab('Proportion') +
     theme_bw()
-ggsave('plots/cancellations_duration_zhang.png', width=8, height=6)
+
+ggsave('plots/cancellations_duration_krasich.png', width=8, height=6)
+
+discretize(fix_ucm.on_task$n_cancellations, min=-0.5, max=9.5, binwidth=1) %>%
+    mutate(mw=0) %>%
+    bind_rows(discretize(fix_ucm.mw$n_cancellations, min=-0.5, max=9.5, binwidth=1) %>%
+              mutate(mw=1)) %>%
+    ggplot(aes(x=mid, y=p, fill=factor(mw))) +
+    geom_col(position='identity', alpha=.75) +
+    theme_bw()
+
+    
+##pivot_wider(names_from='mw', values_from=c('count', 'p'), names_sep='.')
