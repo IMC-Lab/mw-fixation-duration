@@ -93,18 +93,19 @@ LL <- function(x, bounds, n_trials, trial_dur, min, max, binwidth, delta=1/n_tri
              t_labile=default_params$t_labile, t_nonlabile=default_params$t_nonlabile,
              t_motor=default_params$t_motor, t_execution=default_params$t_execution, modulation=1, N_mod=1) {
         ## calculate N, initialize LL variables
-        N <- round(N_states * N_mod)
+        N_states_mod <- round(N_states * N_mod)
         ll <- 0
         
         ## calculate LL, assigning minimum value for out-of-bound parameter settings
-        if (!in_bounds(list(N_states=N, t_timer=t_timer, t_labile=t_labile, t_nonlabile=t_nonlabile,
+        if (!in_bounds(list(N_states=N_states_mod, t_timer=t_timer, t_labile=t_labile, t_nonlabile=t_nonlabile,
                             t_motor=t_motor, t_execution=t_execution, modulation=modulation, N_mod=N_mod),
                        bounds)) {
             ll <- LL_discrete(x, numeric(), min=min, max=max, binwidth=binwidth, delta=delta)        
         } else {
             ll <- 1:n_trials %>%
                 mclapply(function (i) {
-                    UCM(N_timer=N, N_labile=N, N_nonlabile=N, N_motor=N, N_execution=N,
+                    UCM(N_timer=N_states_mod, N_labile=N_states_mod, N_nonlabile=N_states_mod,
+                        N_motor=N_states, N_execution=N_states,
                         t_timer=t_timer, t_labile=t_labile, t_nonlabile=t_nonlabile,
                         t_motor=t_motor, t_execution=t_execution, modulation=modulation) %>%
                         run(trial_dur) %>%
@@ -254,6 +255,33 @@ reciprobit_plot <- function(title, fix, min) {
         theme_bw() +
         coord_cartesian(xlim=c(1/min, 0)) +
         ggtitle(title)    
+}
+
+ecdf_plot <- function(title, fix, max) {
+    fix %>% unnest(data) %>%
+        ggplot(aes(x=fixdur, color=type)) +
+        stat_ecdf() +
+        scale_color_brewer(name='', palette='Set1') +
+        facet_grid( ~ mw, labeller=labeller(mw=c('0'='On-task', '1'='Mind-wandering'))) +
+        scale_x_continuous(name='Fixation Duration (s)') +
+        scale_y_continuous(name='Cumulative Probability') +
+        theme_bw() +
+        coord_cartesian(xlim=c(0, max)) +
+        ggtitle(title)
+}
+
+difference_plot <- function(title, fix, max, binwidth) {
+    fix %>%
+        mutate(hist=map(data, ~ discretize(.x$fixdur, 0, max, binwidth))) %>%
+        select(-data) %>%
+        unnest(hist) %>%
+        pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p)) %>%
+        mutate(p_diff=p_mw1-p_mw0) %>%
+        ggplot(aes(x=mid, y=p_diff, color=type)) +
+        geom_line() +
+        xlab('Fixation Duration (s)') + ylab('Probability Difference (MW - On Task)') +
+        scale_color_brewer(name='', palette='Set1') +
+        theme_bw() + ggtitle(title)
 }
 
 ## Fit LATER on the dataframe df

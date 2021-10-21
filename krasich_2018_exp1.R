@@ -79,11 +79,14 @@ fix_later.on_task <- fix_later %>% filter(mw==0)
 fix_later.mw <- fix_later %>% filter(mw==1)
 
 
+
+
+
 ##################################################################################################
 ##                 Use this code to optimze on-task & mw trials separately
 ##################################################################################################
 
-bopt.on_task <- optimize('krasich_2018_on_task.rds', LL.on_task, bounds.separate)
+bopt.on_task <- optimize('krasich_2018_on_task.rds', LL.on_task, bounds.N.separate)
 params.on_task <- getBestPars(bopt.on_task)
 params.on_task
 
@@ -131,6 +134,11 @@ ggsave('plots/fit_krasich_2018_separate.png', width=8, height=4)
 reciprobit_plot('Krasich et al. (2018) Model Fits (Separate)', fix, min=MIN_FIXDUR)
 ggsave('plots/reciprobit_krasich_2018_separate.png', width=16, height=8)
 
+ecdf_plot('Krasich et al. (2018) Model Fits (Separate)', fix, max=MAX_FIXDUR)
+ggsave('plots/ecdf_krasich_2018_separate.png', width=8, height=4)
+
+difference_plot('Krasich et al. (2018) Model Fits (Separate)', fix, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/difference_krasich_2018_separate.png', width=8, height=4)
 
 ## Calculate log-likelihood of UCM and LATER
 LL_discrete(fix_data.on_task$fixdur, fix_ucm.on_task$fixdur, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH, delta=1/N_TRIALS) +
@@ -187,6 +195,12 @@ ggsave('plots/fit_krasich_2018_rate_mod.png', width=8, height=4)
 reciprobit_plot('Krasich et al. (2018) Model Fits (Rate modulation)', fix, min=MIN_FIXDUR)
 ggsave('plots/reciprobit_krasich_2018_rate_mod.png', width=16, height=8)
 
+ecdf_plot('Krasich et al. (2018) Model Fits (Rate modulation)', fix, max=MAX_FIXDUR)
+ggsave('plots/ecdf_krasich_2018_rate_mod.png', width=8, height=4)
+
+difference_plot('Krasich et al. (2018) Model Fits (Rate modulation)', fix, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/difference_krasich_2018_rate_mod.png', width=8, height=4)
+
 
 ## Calculate log-likelihood of UCM and LATER
 LL_discrete(fix_data.on_task$fixdur, fix_ucm.on_task$fixdur, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH, delta=1/N_TRIALS) +
@@ -200,7 +214,7 @@ LL_discrete(fix_data.on_task$fixdur, fix_later.on_task$fixdur, min=MIN_FIXDUR, m
 ##        Use this code to optimze on-task & mw trials with rate modulation & N modulation
 ##################################################################################################
 
-bopt.N_mod <- optimize('krasich_2018_N_mod.rds', LL.jointN_mod, bounds.N_mod)
+bopt.N_mod <- optimize('krasich_2018_N_mod2.rds', LL.jointN_mod, bounds.N_mod)
 params.N_mod <- getBestPars(bopt.N_mod)
 params.N_mod
 
@@ -251,6 +265,12 @@ ggsave('plots/fit_krasich_2018_N_mod.png', width=8, height=4)
 
 reciprobit_plot('Krasich et al. (2018) Model Fits (N modulation)', fix, min=MIN_FIXDUR)
 ggsave('plots/reciprobit_krasich_2018_N_mod.png', width=16, height=8)
+
+ecdf_plot('Krasich et al. (2018) Model Fits (N modulation)', fix, max=MAX_FIXDUR)
+ggsave('plots/ecdf_krasich_2018_N_mod.png', width=8, height=4)
+
+difference_plot('Krasich et al. (2018) Model Fits (N modulation)', fix, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/difference_krasich_2018_N_mod.png', width=8, height=4)
 
 
 ## Calculate log-likelihood of UCM and LATER

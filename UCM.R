@@ -237,17 +237,19 @@ get_states <- function(ucm) {
         mutate(stage=factor(stage, levels=c('timer', 'labile', 'nonlabile', 'motor', 'execution', 'fixation'))) %>%
         pivot_wider(names_from=key)
     
-    N <- s %>% group_by(stage) %>%
+    N <- s %>% group_by(replication, stage) %>%
         summarize(N=length(unique(state))) %>%
         pivot_wider(names_from=stage, values_from=N)
     
     s %>%
-        mutate(cum_state=ifelse(stage=='labile', N$timer+state,
-                         ifelse(stage=='nonlabile', N$timer+N$labile+state,
-                         ifelse(stage=='motor', N$timer+N$labile+N$nonlabile+state,
-                         ifelse(stage=='execution', N$timer+N$labile+N$nonlabile+N$motor+state,
-                         ifelse(stage=='fixation', N$timer+N$labile+N$nonlabile+N$motor+N$execution+state,
-                                state)))))) %>%
+        group_by(replication) %>%
+        mutate(cum_state=ifelse(stage=='timer', state / N$timer[replication],
+                         ifelse(stage=='labile', 1 + state / N$labile[replication],
+                         ifelse(stage=='nonlabile', 2 + state / N$nonlabile[replication],
+                         ifelse(stage=='motor', 3 + state / N$motor[replication],
+                         ifelse(stage=='execution', 4 + state / N$execution[replication],
+                         ifelse(stage=='fixation', 5 + state / N$fixation[replication],
+                                state))))))) %>%
         left_join(get_ids(ucm))
 }
 
@@ -284,7 +286,14 @@ get_fixations <- function(ucm) {
 #'     run(until=5) %>%
 #'     trace_plot()
 #' @export
-trace_plot <- function(ucm, start=0, end=now(ucm)) {
+trace_plot <- function(ucm, start=0, end=NULL, fix_areas=TRUE) {
+    if (is.null(end)) {
+        if (is.list(ucm))
+            end <- now(ucm[[1]])
+        else
+            end <- now(ucm)
+    }
+    
     f <- ucm %>%
         get_fixations() %>%
         filter(end_time >= start & start_time <= end)
@@ -292,37 +301,158 @@ trace_plot <- function(ucm, start=0, end=now(ucm)) {
         get_states() %>%
         filter(time >= start & time <= end)
 
-    ## Get the starting state of each stage
-    N <- s %>% group_by(stage) %>%
-        summarize(N=min(cum_state)) %>%
-        pivot_wider(names_from=stage, values_from=N) %>%
-        as.numeric
-    
-    s %>%
-        ggplot(aes(x=time, y=cum_state, group=id)) +
-        geom_rect(aes(xmin=start_time, xmax=end_time, ymin=-Inf, ymax=Inf),
-                  inherit.aes=FALSE, alpha=0.25, data=f) +
-        geom_hline(yintercept=N) +
+    p <- s %>%
+        ggplot(aes(x=time, y=cum_state, group=interaction(replication, id)))
+
+    if (fix_areas)
+        p <- p + geom_rect(aes(xmin=start_time, xmax=end_time, ymin=-Inf, ymax=Inf),
+                           inherit.aes=FALSE, alpha=0.25, data=f)
+
+    p + geom_hline(yintercept=0:5) +
         geom_step() +
         scale_x_continuous(name='Time (s)', limits=c(start, end), expand=c(0, 0)) +
-        scale_y_continuous(breaks=N[-length(N)] + diff(N)/2,
+        scale_y_continuous(name='', breaks=0.5:4.5,
                            labels=c('timer', 'labile', 'non-labile', 'motor', 'execution'),
-                           limits=c(0, max(s$cum_state)),
-                           expand=c(0, 0)) +
+                           limits=c(0, 5), expand=c(0, 0)) +
         theme_bw() +
         theme(axis.text.y=element_text(angle=90, hjust=0.5, vjust=0.5),
               axis.title.y=element_blank())
 }
 
+#' Get a trace of UCM's simulation, where each time is aligned
+#' to the start of the previous fixation. Most useful to show the
+#' timecourse of model behavior leading to the distribution of
+#' fixation durations.
+#'
+#' @param ucm the UCM simmer environment to plot traces for
+#' @examples
+#' UCM() %>%
+#'     run(until=5) %>%
+#'     get_aligned_states()
+#' @export
+get_aligned_states <- function(ucm) {
+    ## Get the model fixations, and ID them by the ID
+    ## of the saccade program that *ended* that fixation
+    fix <- get_fixations(ucm) %>%
+        group_by(replication) %>%
+        mutate(end_id=lead(id),
+               start_id=id,
+               id=end_id) %>%
+        relocate(id, start_id, end_id)
+
+    ## fill in blank end_ids
+    for (r in 1:max(fix$replication)) {
+        i <- max(which(fix$replication==r))
+        fix$end_id[i] <- get_states(ucm) %>%
+            filter(id > fix$start_id[i] & state==0 & stage=='execution' & time == fix$end_time[i]) %>%
+            pull(id)
+        fix$id[i] <- fix$end_id[i]
+    }
+    
+    ## Get fixation cancellation information
+    f <- get_cancellations(ucm) %>%
+        left_join(fix) %>%
+        select(-n_cancellations, -n)
+
+    for (r in 1:max(f$replication)) {
+        fr <- f %>% filter(replication==r)
+        
+        ## remove unstarted/unfinished fixations
+        while (is.na(fr$start_id[1]) & !fr$cancelled[1])
+            fr <- fr[-1,]
+        while (is.na(fr$start_id[nrow(fr)]))
+            fr <- fr[-nrow(fr),]
+        
+        ## find the start_id and end_id of cancelled saccade programs
+        for (i in 1:nrow(fr)) {
+            if (fr$cancelled[i]) {
+                j <- i+1
+                while (fr$cancelled[j] & j <= nrow(fr))
+                    j <- j+1
+                if (j <= nrow(fr)) {
+                    fr$start_id[i] <- fr$start_id[j]
+                    fr$end_id[i] <- fr$end_id[j]
+                    fr$start_time[i] <- fr$start_time[j]
+                    fr$end_time[i] <- fr$end_time[j]
+                    fr$duration[i] <- fr$duration[j]            
+                }
+            }
+        }
+
+        f <- f %>% filter(replication != r) %>%
+            bind_rows(fr)
+    }
+    
+    ## count number of cancellations
+    f <- f %>%
+        group_by(replication, end_id) %>%
+        mutate(n_cancellations=n()-1)
+    
+    
+    ## get the model trace and align by start_time
+    get_states(ucm) %>%
+        left_join(f) %>%
+        filter(!is.na(start_id)) %>%
+        mutate(time=time-start_time)
+}
+
+#' Get a traceplot of UCM's simulation, where each trace is aligned
+#' to the start of the previous fixation. Most useful to show the
+#' timecourse of model behavior leading to the distribution of
+#' fixation durations.
+#'
+#' @param ucm the UCM simmer environment to plot traces for
+#' @param n the number of traces to plot (by default, plot all traces)
+#' @param cancelled if true, plot traces of cancelled saccade programs. if
+#' false, only plot the saccade programs which exited the labile stage
+#' @examples
+#' UCM() %>%
+#'     run(until=5) %>%
+#'     aligned_trace_plot()
+#' @export
+aligned_trace_plot <- function(ucm, n=NULL, cancelled=FALSE) {
+    s <- get_aligned_states(ucm)
+    N <- s %>% group_by(stage) %>%
+        summarize(N=min(cum_state)) %>%
+        filter(stage != 'fixation') %>%
+        pivot_wider(names_from=stage, values_from=N) %>%
+        as.numeric 
+
+    if (!cancelled)
+        s <- s %>% filter(cancelled==0)
+
+    if (!is.null(n) && n <= 0)
+        stop('Error: N must be an integer above 0')
+    if (!is.null(n)) {
+        ids <- sample(unique(s$end_id), n)
+        s <- s %>% filter(end_id %in% ids)
+
+    }
+    
+    s %>%
+        filter(stage != 'fixation') %>%
+        filter(stage != 'execution' | state == 0) %>%
+        ggplot(aes(x=time, y=cum_state, group=interaction(replication, id))) +
+        geom_hline(yintercept=N) +
+        geom_step() +
+        scale_x_continuous(name='Time relative to previous fixation onset (s)', expand=c(0, 0)) +
+        scale_y_continuous(name='', minor_breaks=c(), breaks=0.5:3.5,
+                           labels=c('timer', 'labile', 'non-labile', 'motor'),
+                           limits=c(0, 4), expand=c(0, 0)) +
+        theme_bw() +
+        theme(axis.text.y=element_text(angle=90, hjust=0.5, vjust=0.5),
+              axis.title.y=element_blank(),
+              panel.grid.major.y=element_blank())
+}
 
 cancellations_hist <- function(ucm, max_duration=1.2, binwidth=0.06) {
-    c <- get_cancellations(envs)
-    f <- left_join(get_fixations(envs), c)
+    c <- get_cancellations(ucm)
+    f <- left_join(get_fixations(ucm), c)
     
     f %>%
-        filter(activity_time <= max_diration) %>%
+        filter(duration <= max_duration) %>%
         mutate(n_cancellations=pmin(n_cancellations, 3)) %>%
-        ggplot(aes(x=activity_time, group=n_cancellations, fill=factor(n_cancellations))) +
+        ggplot(aes(x=duration, group=n_cancellations, fill=factor(n_cancellations))) +
         scale_fill_viridis(name='Cancellations', discrete=TRUE) +
         geom_histogram(aes(y=after_stat(count / sum(count))), binwidth=binwidth) +
         scale_x_continuous(limits=c(0, 1.2)) +

@@ -135,6 +135,11 @@ ggsave('plots/fit_zhang_2021_separate.png', width=8, height=4)
 reciprobit_plot('Zhang et al. (2021) Model Fits (Separate)', fix, min=MIN_FIXDUR)
 ggsave('plots/reciprobit_zhang_2021_separate.png', width=16, height=8)
 
+ecdf_plot('Zhang et al. (2021) Model Fits (Separate)', fix, max=MAX_FIXDUR)
+ggsave('plots/ecdf_zhang_2021_separate.png', width=8, height=4)
+
+difference_plot('Zhang et al. (2021) Model Fits (Separate)', fix, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/difference_zhang_2021_separate.png', width=8, height=4)
 
 ## Calculate log-likelihood of UCM and LATER
 LL_discrete(fix_data.on_task$fixdur, fix_ucm.on_task$fixdur, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH, delta=1/N_TRIALS) +
@@ -191,6 +196,11 @@ ggsave('plots/fit_zhang_2021_rate_mod.png', width=8, height=4)
 reciprobit_plot('Zhang et al. (2021) Model Fits (Rate modulation)', fix, min=MIN_FIXDUR)
 ggsave('plots/reciprobit_zhang_2021_rate_mod.png', width=16, height=8)
 
+ecdf_plot('Zhang et al. (2021) Model Fits (Rate modulation)', fix, max=MAX_FIXDUR)
+ggsave('plots/ecdf_zhang_2021_rate_mod.png', width=8, height=4)
+
+difference_plot('Zhang et al. (2021) Model Fits (Rate modulation)', fix, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/difference_zhang_2021_rate_mod.png', width=8, height=4)
 
 ## Calculate log-likelihood of UCM and LATER
 LL_discrete(fix_data.on_task$fixdur, fix_ucm.on_task$fixdur, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH, delta=1/N_TRIALS) +
@@ -256,6 +266,11 @@ ggsave('plots/fit_zhang_2021_N_mod.png', width=8, height=4)
 reciprobit_plot('Zhang et al. (2021) Model Fits (N modulation)', fix, min=MIN_FIXDUR)
 ggsave('plots/reciprobit_zhang_2021_N_mod.png', width=16, height=8)
 
+ecdf_plot('Zhang et al. (2021) Model Fits (N modulation)', fix, max=MAX_FIXDUR)
+ggsave('plots/ecdf_zhang_2021_N_mod.png', width=8, height=4)
+
+difference_plot('Zhang et al. (2021) Model Fits (N modulation)', fix, max=MAX_FIXDUR, binwidth=BINWIDTH)
+ggsave('plots/difference_zhang_2021_N_mod.png', width=8, height=4)
 
 ## Calculate log-likelihood of UCM and LATER
 LL_discrete(fix_data.on_task$fixdur, fix_ucm.on_task$fixdur, min=MIN_FIXDUR, max=MAX_FIXDUR, binwidth=BINWIDTH, delta=1/N_TRIALS) +
