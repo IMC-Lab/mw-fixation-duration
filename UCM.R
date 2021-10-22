@@ -424,9 +424,12 @@ aligned_trace_plot <- function(ucm, n=NULL, cancelled=FALSE) {
     if (!is.null(n) && n <= 0)
         stop('Error: N must be an integer above 0')
     if (!is.null(n)) {
-        ids <- sample(unique(s$end_id), n)
-        s <- s %>% filter(end_id %in% ids)
-
+        s <- s %>% group_by(replication) %>%
+            nest %>%
+            mutate(data=map(data,
+                            ~filter(., end_id %in%
+                                       sample(unique(.$end_id), 5)))) %>%
+            unnest(data)
     }
     
     s %>%

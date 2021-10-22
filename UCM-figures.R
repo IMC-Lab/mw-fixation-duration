@@ -7,11 +7,11 @@ library(patchwork)
 ## Load the UCM source code
 source('UCM.R')
 options(mc.cores=parallel::detectCores())
-set.seed(1234)
+set.seed(12345)
 
 
 ## helper function to run/plot UCM with various parameter settings
-fixdur_traceplot <- function(ucm, n=NULL, xmin=-0.5, xmax=1.0, legend.x=.033,
+fixdur_traceplot <- function(ucm, n=NULL, xmin=-0.5, xmax=1.0, base_size=12,
                              bw='nrd0', rep_name='Replication',
                              rep_labels=as.character(seq(1, ifelse(is.list(ucm), length(ucm), 1)))) {
     ## plot the hist of fixation durations
@@ -24,9 +24,8 @@ fixdur_traceplot <- function(ucm, n=NULL, xmin=-0.5, xmax=1.0, legend.x=.033,
         scale_color_viridis(discrete=TRUE, name=rep_name) +
         scale_fill_viridis(discrete=TRUE, name=rep_name) +
         ggtitle('Fixation Duration (s)') +
-        theme_void(base_size=16) +
-        theme(legend.position=c(legend.x, .5), 
-              axis.title.x=element_blank(),
+        theme_void(base_size=base_size) +
+        theme(axis.title.x=element_blank(),
               axis.text.x=element_blank(),
               axis.ticks.x=element_blank())
 
@@ -37,26 +36,15 @@ fixdur_traceplot <- function(ucm, n=NULL, xmin=-0.5, xmax=1.0, legend.x=.033,
         scale_x_continuous(name='Time relative to previous fixation onset (s)',
                            minor_breaks=c(0), limits=c(xmin, xmax), expand=c(0,0)) +
         scale_color_viridis(discrete=TRUE) +
-        theme_bw(base_size=16) +
+        theme_bw(base_size=base_size) +
         theme(legend.position='none',
               panel.grid.major.y=element_blank())
     
     ## overlay the plots
     ((dens/trace) &
      coord_cartesian(xlim=c(xmin, xmax))) +
-        plot_layout(heights=c(.25, .75))
+        plot_layout(heights=c(.25, .75), guides='collect')
 }
-
-
-ucm5 <- UCM(N_timer=5, N_labile=5, N_nonlabile=5, N_motor=5, N_execution=5) %>%
-    run(1000)
-ucm25 <- UCM(N_timer=25, N_labile=25, N_nonlabile=25, N_motor=25, N_execution=25) %>%
-    run(1000)
-ucm <- list(ucm5, ucm25)
-
-fixdur_traceplot(ucm, rep_name='Threshold', rep_labels=c('N = 5', 'N = 25'), n=15)
-ggsave('plots/UCM-N-mod.png', width=16, height=8)
-
 
 
 ucmNormal <- UCM() %>%
@@ -65,5 +53,30 @@ ucmMod <- UCM(modulation=.7) %>%
     run(1000)
 ucm <- list(ucmNormal, ucmMod)
 
-fixdur_traceplot(ucm, rep_name='Modulation', rep_labels=c('Modulation = 1', 'Modulation = .7'), n=15, legend.x=.05)
-ggsave('plots/UCM-rate-mod.png', width=16, height=8)
+plot.rate_mod <- fixdur_traceplot(ucm, n=5, base_size=10,
+                 rep_name='Modulation',
+                 rep_labels=c('M = 1', 'M = .7'))
+plot.rate_mod
+ggsave('plots/UCM-rate-mod.png', width=6, height=2)
+
+
+
+
+ucm5 <- UCM(N_timer=5, N_labile=5, N_nonlabile=5, N_motor=5, N_execution=5) %>%
+    run(1000)
+ucm25 <- UCM(N_timer=25, N_labile=25, N_nonlabile=25, N_motor=25, N_execution=25) %>%
+    run(1000)
+ucm <- list(ucm25, ucm5)
+
+plot.N_mod <- fixdur_traceplot(ucm, n=5, base_size=10,
+                               rep_name='Threshold',
+                               rep_labels=c('N = 5', 'N = 25'))
+plot.N_mod
+ggsave('plots/UCM-N-mod.png', width=6, height=2)
+
+
+
+wrap_plots(plot.rate_mod, plot.N_mod, ncol=1, tag_level='new') +
+    plot_annotation(tag_levels=list(c('A', '', 'B', '')))
+
+ggsave('plots/UCM-mod.png', width=6, height=5)
