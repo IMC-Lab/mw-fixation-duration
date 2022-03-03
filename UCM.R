@@ -179,22 +179,32 @@ get_ids <- function(ucm) {
 #' n_cancellations states how many cancellations are within the saccade generated
 #' by the ith timer.
 #' 
-#' @param ucm The UCM simmer environment to get cancellation information for.
+#' @param ucm The UCM simmer environment to get cancellation information for
+#' @param time if true (default to false), include the time of cancellation as a column
 #' @return a dataframe detailing which IDs were cancelled, and how many cancellations were present before each uncancelled ID
 #' @examples
 #' UCM() %>%
 #'     run(until=5) %>%
 #'     get_cancellations()
 #' @export
-get_cancellations <- function(ucm) {
-    ucm %>%
+get_cancellations <- function(ucm, time=FALSE) {
+    c <- ucm %>%
         get_mon_attributes() %>%
         tibble() %>%
         filter(key == 'cancelled') %>%
         separate(name, c('stage', 'n'), sep='\\.') %>%
         mutate(n=as.numeric(n)) %>%
-        group_by(stage, n, replication, key) %>%
-        summarize(value=max(value), .groups='drop') %>%
+        group_by(stage, n, replication, key)
+
+    if (time==TRUE)
+        c <- c %>%
+            summarize(value=max(value), time=ifelse(value>0, max(time), NA), .groups='drop')
+    else
+        c <- c %>%
+            summarize(value=max(value), .groups='drop')
+
+    
+    c %>%
         pivot_wider(names_from=key) %>%
         arrange(replication, n) %>%
         group_by(replication) %>%
@@ -210,7 +220,7 @@ get_cancellations <- function(ucm) {
         ungroup() %>%
         left_join(filter(get_ids(ucm), stage=='labile')) %>%
         select(-stage, -n) %>%
-        relocate(id)
+        relocate(replication, id, cancelled)
 }
 
 #' Get a dataframe specifying every state transition of every random walk
@@ -284,6 +294,7 @@ get_fixations <- function(ucm) {
 #'     run(until=5) %>%
 #'     trace_plot()
 #' @export
+<<<<<<< Updated upstream
 trace_plot <- function(ucm, start=0, end=now(ucm)) {
     f <- ucm %>%
         get_fixations() %>%
@@ -293,10 +304,191 @@ trace_plot <- function(ucm, start=0, end=now(ucm)) {
         filter(time >= start & time <= end)
 
     ## Get the starting state of each stage
+=======
+trace_plot <- function(ucm, start=0, end=NULL, fix_areas=TRUE, cancellations=TRUE) {
+    if (is.null(end)) {
+        if (is.list(ucm))
+            end <- now(ucm[[1]])
+        else
+            end <- now(ucm)
+    }
+    
+    s <- ucm %>%
+        get_states() %>%
+        filter(time >= start-1 & time <= end+1)
+    c <- ucm %>%
+            get_cancellations(time=TRUE) %>%
+            filter(cancelled == 1 & time >= start-1 & time <= end+1)
+    
+    ## add states for cancelled labile programs
+    s.cancelled <- s %>%
+        filter(stage=='labile' & id %in% c$id) %>%
+        group_by(replication, id) %>%
+        slice(n()) %>%
+        ungroup() %>%
+        mutate(time=c$time)
+    s <- bind_rows(s, s.cancelled)
+    
+    p <- s %>%
+        ggplot(aes(x=time, y=cum_state, group=interaction(replication, id)))
+
+    if (fix_areas) {
+        f <- ucm %>%
+            get_fixations() %>%
+            filter(end_time >= start & start_time <= end)
+
+        if (nrow(f) > 0)
+            p <- p + geom_rect(aes(xmin=start_time, xmax=end_time, ymin=-Inf, ymax=Inf),
+                               inherit.aes=FALSE, alpha=0.25, data=f)
+    }
+    
+    p <- p + geom_hline(yintercept=0:5) +
+        geom_step() +
+        scale_x_continuous(name='Time (s)', expand=c(0, 0)) +
+        scale_y_continuous(name='', breaks=0.5:4.5,
+                           labels=c('timer', 'labile', 'non-labile', 'motor', 'execution'),
+                           limits=c(0, 5), expand=c(0, 0)) +
+        coord_cartesian(xlim=c(start, end), expand=FALSE) +
+        theme_bw() +
+        theme(axis.text.y=element_text(angle=90, hjust=0.5, vjust=0.5),
+              axis.title.y=element_blank())
+
+    if (cancellations & nrow(s.cancelled > 0))
+        p <- p + geom_point(data=s.cancelled, color='red', shape=4, size=2, stroke=1) +
+            geom_segment(aes(xend=time, yend=1), data=s.cancelled, color='red', linetype='dashed')
+        
+    p
+}
+
+#' Get a trace of UCM's simulation, where each time is aligned
+#' to the start of the previous fixation. Most useful to show the
+#' timecourse of model behavior leading to the distribution of
+#' fixation durations.
+#'
+#' @param ucm the UCM simmer environment to plot traces for
+#' @examples
+#' UCM() %>%
+#'     run(until=5) %>%
+#'     get_aligned_states()
+#' @export
+get_aligned_states <- function(ucm) {
+    ## Get the model fixations, and ID them by the ID
+    ## of the saccade program that *ended* that fixation
+    fix <- get_fixations(ucm) %>%
+        group_by(replication) %>%
+        mutate(end_id=lead(id),
+               start_id=id,
+               id=end_id) %>%
+        relocate(id, start_id, end_id)
+
+    ## fill in blank end_ids
+    for (r in 1:max(fix$replication)) {
+        i <- max(which(fix$replication==r))
+        fix$end_id[i] <- get_states(ucm) %>%
+            filter(id > fix$start_id[i] & state==0 & stage=='execution' & time == fix$end_time[i]) %>%
+            pull(id)
+        fix$id[i] <- fix$end_id[i]
+    }
+    
+    ## Get fixation cancellation information
+    f <- get_cancellations(ucm) %>%
+        left_join(fix) %>%
+        select(-n_cancellations, -n)
+
+    for (r in 1:max(f$replication)) {
+        fr <- f %>% filter(replication==r)
+        
+        ## remove unstarted/unfinished fixations
+        while (is.na(fr$start_id[1]) & !fr$cancelled[1])
+            fr <- fr[-1,]
+        while (is.na(fr$start_id[nrow(fr)]))
+            fr <- fr[-nrow(fr),]
+        
+        ## find the start_id and end_id of cancelled saccade programs
+        for (i in 1:nrow(fr)) {
+            if (fr$cancelled[i]) {
+                j <- i+1
+                while (fr$cancelled[j] & j <= nrow(fr))
+                    j <- j+1
+                if (j <= nrow(fr)) {
+                    fr$start_id[i] <- fr$start_id[j]
+                    fr$end_id[i] <- fr$end_id[j]
+                    fr$start_time[i] <- fr$start_time[j]
+                    fr$end_time[i] <- fr$end_time[j]
+                    fr$duration[i] <- fr$duration[j]            
+                }
+            }
+        }
+
+        f <- f %>% filter(replication != r) %>%
+            bind_rows(fr)
+    }
+    
+    ## count number of cancellations
+    f <- f %>%
+        group_by(replication, end_id) %>%
+        mutate(n_cancellations=n()-1)
+    
+    
+    ## get the model trace and align by start_time
+    get_states(ucm) %>%
+        left_join(f) %>%
+        filter(!is.na(start_id)) %>%
+        mutate(time=time-start_time)
+}
+
+#' Get a traceplot of UCM's simulation, where each trace is aligned
+#' to the start of the previous fixation. Most useful to show the
+#' timecourse of model behavior leading to the distribution of
+#' fixation durations.
+#'
+#' @param ucm the UCM simmer environment to plot traces for
+#' @param n the number of traces to plot (by default, plot all traces)
+#' @param ids a list of individual fixation ids to plot (by default, plot all traces)
+#' @param cancelled if true, plot traces of cancelled saccade programs. if
+#' false, only plot the saccade programs which exited the labile stage
+#' @examples
+#' UCM() %>%
+#'     run(until=5) %>%
+#'     aligned_trace_plot()
+#' @export
+aligned_trace_plot <- function(ucm, n=NULL, fix_ids=NULL, cancelled=FALSE) {
+    s <- get_aligned_states(ucm)
+>>>>>>> Stashed changes
     N <- s %>% group_by(stage) %>%
         summarize(N=min(cum_state)) %>%
         pivot_wider(names_from=stage, values_from=N) %>%
+<<<<<<< Updated upstream
         as.numeric
+=======
+        as.numeric 
+
+    if (!cancelled)
+        s <- s %>% filter(cancelled==0)
+
+    if (!is.null(fix_ids)) {
+        s <- s %>% group_by(replication) %>%
+            nest %>%
+            mutate(data=map(data,
+                            ~filter(., end_id %in% fix_ids))) %>%
+            unnest(data)
+    } else if (!is.null(n)) {
+        if (n <= 0)
+            stop('Error: N must be an integer above 0')
+
+        ## select the fixations to keep
+        s <- s %>% mutate(END_ID=paste0(replication, '_', end_id))
+        fix_ids <- s %>% distinct(END_ID) %>% slice_sample(n=n) %>% pull(END_ID)            
+        
+        s <- s %>% group_by(replication) %>%
+            nest %>%
+            mutate(data=map(data,
+                            ~filter(.x, END_ID %in% fix_ids))) %>%
+            unnest(data) %>%
+            select(-END_ID)
+    }
+>>>>>>> Stashed changes
+    
     
     s %>%
         ggplot(aes(x=time, y=cum_state, group=id)) +

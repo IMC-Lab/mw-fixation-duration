@@ -66,14 +66,26 @@ NLL_discrete <- function(x, xhat, ...) {
 
 
 between <- function(x, xmin, xmax) {
+    if (is.na(x) || is.null(x))
+        stop('Error: x is null')
+    if (is.na(xmin) || is.null(xmin))
+        stop('Error: xmin is null')
+    if (is.na(xmax) || is.null(xmax))
+        stop('Error: xmax is null')
+    
     x >= xmin & x <= xmax
 }
 
 in_bounds <- function(parameters, bounds) {
     all(sapply(names(bounds),
-               function (p) between(parameters[[p]],
-                                    bounds[[p]][1],
-                                    bounds[[p]][2])))
+               function (p) {
+                   if (is.na(parameters[[p]]) || is.null(parameters[[p]]))
+                       stop(paste0('Error: parameter ', p, ' is null.'))
+                   
+                   between(parameters[[p]],
+                           bounds[[p]][1],
+                           bounds[[p]][2])
+               }))
 }
 
 #' Get a function to calculate the LL of x given some parameterization of the UCM
@@ -87,11 +99,11 @@ in_bounds <- function(parameters, bounds) {
 #' @param delta the minimum probability allowed in each histogram bin (used to avoid infinite values)
 #' @param default_params a named list of default parameter values provided to the returned log likelihood function.
 #' @return a function that calculates the LL of x given some parameterization of the UCM
-LL <- function(x, bounds, n_trials, trial_dur, min, max, binwidth, delta=1/n_trials,
-               default_params=list()) {
+LL <- function(x, bounds, n_trials, trial_dur, min, max, binwidth, delta=1/n_trials, default_params=list()) {
     function(N_states=default_params$N_states, t_timer=default_params$t_timer,
              t_labile=default_params$t_labile, t_nonlabile=default_params$t_nonlabile,
-             t_motor=default_params$t_motor, t_execution=default_params$t_execution, modulation=1, N_mod=1) {
+             t_motor=default_params$t_motor, t_execution=default_params$t_execution,
+             modulation=1, N_mod=1) {
         ## calculate N, initialize LL variables
         N <- round(N_states * N_mod)
         ll <- 0
@@ -133,9 +145,11 @@ LL.joint <- function(x.on_task, x.mw, bounds, n_trials, trial_dur, min, max, bin
     
     function(N_states=default_params$N_states, t_timer=default_params$t_timer,
              t_labile=default_params$t_labile, t_nonlabile=default_params$t_nonlabile,
-             t_motor=default_params$t_motor, t_execution=default_params$t_execution, modulation=1, N_mod=1) {
+             t_motor=default_params$t_motor, t_execution=default_params$t_execution,
+             modulation=1, N_mod=1) {
         ll.on_task <- LL.on_task(N_states, t_timer, t_labile, t_nonlabile, t_motor, t_execution)
-        ll.mw <- LL.mw(N_states, t_timer, t_labile, t_nonlabile, t_motor, t_execution, modulation=modulation, N_mod=N_mod)
+        ll.mw <- LL.mw(N_states, t_timer, t_labile, t_nonlabile, t_motor, t_execution,
+                       modulation=modulation, N_mod=N_mod)
         
         list(Score=ll.on_task$Score+ll.mw$Score, LL.on_task=ll.on_task$Score, LL.mw=ll.mw$Score,
              n_trials=ll.on_task$n_trials, min=ll.on_task$min,
@@ -185,8 +199,8 @@ mw_plot <- function(title, data, binwidth) {
     p.2 <- ggplot(data) +
         aes(x=fixdur, y=factor(mw), fill=factor(mw)) +
         stat_summary(fun.data=mean_cl_normal, geom='col') +
-        stat_summary(fun.data=mean_cl_normal, geom='errorbar') +
-        scale_fill_jco(name='Probe Response', labels=c('On-task', 'Mind-wandering')) +
+        stat_summary(fun.data=mean_cl_normal, geom='errorbar', width=.5) +
+        scale_fill_jco(name='Probe Response', labels=c('Attentive Viewing', 'Mind Wandering')) +
         xlab('Fixation Duration (ms)') +
         theme_bw() +
         theme(axis.title.y=element_blank(),
@@ -199,14 +213,12 @@ mw_plot <- function(title, data, binwidth) {
         plot_annotation(title=title)
 }
 
-fit_plot <- function(title, fix, min, max, binwidth) {
+fit_plot <- function(title, fix) {
     p.1 <- fix %>% unnest(hist) %>%
         ggplot(aes(x=mid, y=p, color=factor(mw), linetype=type)) +
-        geom_line(size=0.5, show.legend=c(color=FALSE)) +
-        scale_linetype_manual(name='', values=c('solid', 'dotted', 'dashed')) +
-        scale_color_jco(name='Probe Response', labels=c('On-task', 'Mind-wandering')) +
-        facet_grid( ~ mw, labeller=labeller(mw=c('0'='On-task', '1'='Mind-wandering'))) +
-        scale_x_continuous(limits=c(0, 2)) +
+        geom_line(size=.75, show.legend=c(color=FALSE)) +
+        scale_linetype_manual(name='', values=c('dotted', 'solid')) +
+        scale_color_jco(name='Probe Response', labels=c('Attentive Viewing', 'Mind Wandering')) +
         xlab('Fixation Duration (s)') + ylab('Proportion') +
         theme_bw() +
         theme(axis.title.x=element_blank(),
@@ -216,18 +228,17 @@ fit_plot <- function(title, fix, min, max, binwidth) {
     p.2 <- fix %>% unnest(data) %>%
         ggplot() +
         aes(x=fixdur, y=type, fill=factor(mw)) +
-        stat_summary(fun.data=mean_cl_normal, geom='col') +
-        stat_summary(fun.data=mean_cl_normal, geom='errorbar') +
-        facet_grid( ~ mw, labeller=labeller(mw=c('0'='On-task', '1'='Mind-wandering'))) +
-        scale_fill_jco(name='Probe Response', labels=c('On-task', 'Mind-wandering')) +
-        xlab('Fixation Duration (ms)') +
+        stat_summary(fun.data=mean_cl_normal, geom='col', position=position_dodge(.95)) +
+        stat_summary(fun.data=mean_cl_normal, geom='errorbar', width=.5, position=position_dodge(.95)) +
+        scale_fill_jco(name='Probe Response', labels=c('Attentive Viewing', 'Mind Wandering')) +
+        xlab('Fixation Duration (s)') +
         theme_bw() +
         theme(axis.title.y=element_blank(),
               axis.ticks.y=element_blank(),
               panel.grid.major.y=element_blank(),
               strip.background=element_blank(),
               strip.text=element_blank())
-
+    
     (p.1 / p.2 & coord_cartesian(xlim=c(0, 1))) +
         plot_layout(heights=c(1, .25), guides='collect') +
         plot_annotation(title=title)
@@ -241,7 +252,7 @@ reciprobit_plot <- function(title, fix, min) {
         ggplot(aes(x=fixrate, color=type)) +
         stat_ecdf() +
         scale_color_brewer(name='', palette='Set1') +
-        facet_grid( ~ mw, labeller=labeller(mw=c('0'='On-task', '1'='Mind-wandering'))) +
+        facet_grid( ~ mw, labeller=labeller(mw=c('0'='Attentive Viewing', '1'='Mind Wandering'))) +
         scale_x_continuous(name='Fixation Duration (s)',
                            trans='reverse',
                            breaks=seq(0, 1/min),
@@ -254,6 +265,35 @@ reciprobit_plot <- function(title, fix, min) {
         theme_bw() +
         coord_cartesian(xlim=c(1/min, 0)) +
         ggtitle(title)    
+}
+
+ecdf_plot <- function(title, fix, max) {
+    fix %>% unnest(data) %>%
+        ggplot(aes(x=fixdur, color=type)) +
+        stat_ecdf() +
+        scale_color_brewer(name='', palette='Set1') +
+        facet_grid( ~ mw, labeller=labeller(mw=c('0'='Attentive Viewing', '1'='Mind Wandering'))) +
+        scale_x_continuous(name='Fixation Duration (s)') +
+        scale_y_continuous(name='Cumulative Probability') +
+        theme_bw() +
+        coord_cartesian(xlim=c(0, max)) +
+        ggtitle(title)
+}
+
+difference_plot <- function(title, fix, max, binwidth) {
+    fix %>%
+        mutate(hist=map(data, ~ discretize(.x$fixdur, 0, max, binwidth))) %>%
+        select(-data) %>%
+        unnest(hist) %>%
+        pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p)) %>%
+        mutate(p_diff=p_mw1-p_mw0) %>%
+        ggplot(aes(x=mid, y=p_diff, color=type, fill=type)) +
+        geom_line() +
+        geom_area(alpha=.33, position='identity') +
+        xlab('Fixation Duration (s)') + ylab('Probability Difference\n(Mind Wandering - Attentive Viewing)') +
+        scale_color_brewer(name='', palette='Set1') +
+        scale_fill_brewer(name='', palette='Set1') +
+        theme_bw() + ggtitle(title)
 }
 
 ## Fit LATER on the dataframe df
