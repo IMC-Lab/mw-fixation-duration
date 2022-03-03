@@ -252,12 +252,13 @@ get_states <- function(ucm) {
         pivot_wider(names_from=stage, values_from=N)
     
     s %>%
-        mutate(cum_state=ifelse(stage=='labile', N$timer+state,
-                         ifelse(stage=='nonlabile', N$timer+N$labile+state,
-                         ifelse(stage=='motor', N$timer+N$labile+N$nonlabile+state,
-                         ifelse(stage=='execution', N$timer+N$labile+N$nonlabile+N$motor+state,
-                         ifelse(stage=='fixation', N$timer+N$labile+N$nonlabile+N$motor+N$execution+state,
-                                state)))))) %>%
+        mutate(cum_state=ifelse(stage=='timer', state / N$timer,
+                         ifelse(stage=='labile', 1 + state/N$labile,
+                         ifelse(stage=='nonlabile', 2 + state/N$nonlabile,
+                         ifelse(stage=='motor', 3 + state/N$motor,
+                         ifelse(stage=='execution', 4 + state/N$execution,
+                         ifelse(stage=='fixation', 5,
+                                state))))))) %>%
         left_join(get_ids(ucm))
 }
 
@@ -294,17 +295,6 @@ get_fixations <- function(ucm) {
 #'     run(until=5) %>%
 #'     trace_plot()
 #' @export
-<<<<<<< Updated upstream
-trace_plot <- function(ucm, start=0, end=now(ucm)) {
-    f <- ucm %>%
-        get_fixations() %>%
-        filter(end_time >= start & start_time <= end)
-    s <- ucm %>%
-        get_states() %>%
-        filter(time >= start & time <= end)
-
-    ## Get the starting state of each stage
-=======
 trace_plot <- function(ucm, start=0, end=NULL, fix_areas=TRUE, cancellations=TRUE) {
     if (is.null(end)) {
         if (is.list(ucm))
@@ -454,14 +444,10 @@ get_aligned_states <- function(ucm) {
 #' @export
 aligned_trace_plot <- function(ucm, n=NULL, fix_ids=NULL, cancelled=FALSE) {
     s <- get_aligned_states(ucm)
->>>>>>> Stashed changes
     N <- s %>% group_by(stage) %>%
         summarize(N=min(cum_state)) %>%
         pivot_wider(names_from=stage, values_from=N) %>%
-<<<<<<< Updated upstream
         as.numeric
-=======
-        as.numeric 
 
     if (!cancelled)
         s <- s %>% filter(cancelled==0)
@@ -487,8 +473,6 @@ aligned_trace_plot <- function(ucm, n=NULL, fix_ids=NULL, cancelled=FALSE) {
             unnest(data) %>%
             select(-END_ID)
     }
->>>>>>> Stashed changes
-    
     
     s %>%
         ggplot(aes(x=time, y=cum_state, group=id)) +
