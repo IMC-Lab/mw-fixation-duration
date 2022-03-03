@@ -444,11 +444,7 @@ get_aligned_states <- function(ucm) {
 #' @export
 aligned_trace_plot <- function(ucm, n=NULL, fix_ids=NULL, cancelled=FALSE) {
     s <- get_aligned_states(ucm)
-    N <- s %>% group_by(stage) %>%
-        summarize(N=min(cum_state)) %>%
-        pivot_wider(names_from=stage, values_from=N) %>%
-        as.numeric
-
+    
     if (!cancelled)
         s <- s %>% filter(cancelled==0)
 
@@ -464,27 +460,26 @@ aligned_trace_plot <- function(ucm, n=NULL, fix_ids=NULL, cancelled=FALSE) {
 
         ## select the fixations to keep
         s <- s %>% mutate(END_ID=paste0(replication, '_', end_id))
-        fix_ids <- s %>% distinct(END_ID) %>% slice_sample(n=n) %>% pull(END_ID)            
+        fix_ids <- s %>% group_by(replication) %>%
+            distinct(END_ID) %>%
+            slice_sample(n=n) %>%
+            pull(END_ID)
         
         s <- s %>% group_by(replication) %>%
             nest %>%
-            mutate(data=map(data,
-                            ~filter(.x, END_ID %in% fix_ids))) %>%
+            mutate(data=map(data, ~filter(.x, END_ID %in% fix_ids))) %>%
             unnest(data) %>%
             select(-END_ID)
     }
     
     s %>%
         ggplot(aes(x=time, y=cum_state, group=id)) +
-        geom_rect(aes(xmin=start_time, xmax=end_time, ymin=-Inf, ymax=Inf),
-                  inherit.aes=FALSE, alpha=0.25, data=f) +
-        geom_hline(yintercept=N) +
+        geom_hline(yintercept=0:5) +
         geom_step() +
         scale_x_continuous(name='Time (s)', limits=c(start, end), expand=c(0, 0)) +
-        scale_y_continuous(breaks=N[-length(N)] + diff(N)/2,
+        scale_y_continuous(name='', breaks=0.5:4.5,
                            labels=c('timer', 'labile', 'non-labile', 'motor', 'execution'),
-                           limits=c(0, max(s$cum_state)),
-                           expand=c(0, 0)) +
+                           limits=c(0, 5), expand=c(0, 0)) +
         theme_bw() +
         theme(axis.text.y=element_text(angle=90, hjust=0.5, vjust=0.5),
               axis.title.y=element_blank())
