@@ -247,18 +247,16 @@ get_states <- function(ucm) {
         mutate(stage=factor(stage, levels=c('timer', 'labile', 'nonlabile', 'motor', 'execution', 'fixation'))) %>%
         pivot_wider(names_from=key)
     
-    N <- s %>% group_by(stage) %>%
-        summarize(N=length(unique(state))) %>%
-        pivot_wider(names_from=stage, values_from=N)
-    
-    s %>%
-        mutate(cum_state=ifelse(stage=='timer', state / N$timer,
-                         ifelse(stage=='labile', 1 + state/N$labile,
-                         ifelse(stage=='nonlabile', 2 + state/N$nonlabile,
-                         ifelse(stage=='motor', 3 + state/N$motor,
-                         ifelse(stage=='execution', 4 + state/N$execution,
-                         ifelse(stage=='fixation', 5,
-                                state))))))) %>%
+    N <- s %>% group_by(stage, replication) %>%
+        summarize(N=length(unique(state)))
+
+    s %>% left_join(N, by=c('replication', 'stage')) %>%
+        mutate(cum_state=ifelse(stage=='timer', state/N,
+                         ifelse(stage=='labile', 1 + state/N,
+                         ifelse(stage=='nonlabile', 2 + state/N,
+                         ifelse(stage=='motor', 3 + state/N,
+                         ifelse(stage=='execution', 4 + state/N,
+                         ifelse(stage=='fixation', 5, state))))))) %>%
         left_join(get_ids(ucm))
 }
 
@@ -433,6 +431,7 @@ get_aligned_states <- function(ucm) {
 #' fixation durations.
 #'
 #' @param ucm the UCM simmer environment to plot traces for
+#' @param aligned_states optional argument to use cached state data
 #' @param n the number of traces to plot (by default, plot all traces)
 #' @param ids a list of individual fixation ids to plot (by default, plot all traces)
 #' @param cancelled if true, plot traces of cancelled saccade programs. if
@@ -442,8 +441,11 @@ get_aligned_states <- function(ucm) {
 #'     run(until=5) %>%
 #'     aligned_trace_plot()
 #' @export
-aligned_trace_plot <- function(ucm, n=NULL, fix_ids=NULL, cancelled=FALSE) {
-    s <- get_aligned_states(ucm)
+aligned_trace_plot <- function(ucm, aligned_states=NULL, n=NULL, fix_ids=NULL, cancelled=FALSE) {
+    s <- aligned_states
+    if (is.null(s))
+        s <- get_aligned_states(ucm)
+    s <- s %>% filter(stage != 'fixation')
     
     if (!cancelled)
         s <- s %>% filter(cancelled==0)
@@ -473,13 +475,13 @@ aligned_trace_plot <- function(ucm, n=NULL, fix_ids=NULL, cancelled=FALSE) {
     }
     
     s %>%
-        ggplot(aes(x=time, y=cum_state, group=id)) +
+        ggplot(aes(x=time, y=cum_state, group=interaction(id, replication))) +
         geom_hline(yintercept=0:5) +
         geom_step() +
-        scale_x_continuous(name='Time (s)', limits=c(start, end), expand=c(0, 0)) +
-        scale_y_continuous(name='', breaks=0.5:4.5,
-                           labels=c('timer', 'labile', 'non-labile', 'motor', 'execution'),
-                           limits=c(0, 5), expand=c(0, 0)) +
+        scale_x_continuous(name='Time (s)', expand=c(0, 0)) +
+        scale_y_continuous(name='', breaks=0.5:3.5,
+                           labels=c('timer', 'labile', 'non-labile', 'motor'),
+                           limits=c(0, 4), expand=c(0, 0)) +
         theme_bw() +
         theme(axis.text.y=element_text(angle=90, hjust=0.5, vjust=0.5),
               axis.title.y=element_blank())
