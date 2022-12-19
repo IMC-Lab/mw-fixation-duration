@@ -167,7 +167,7 @@ LL.joint <- function(x.on_task, x.mw, bounds, n_trials, trial_dur, min, max, bin
 #' @param initPoints the number of initial parameter settings to explore
 #' @param kappa the weighting of uncertainty information
 #' @param utilityThresh the convergence threshold (between 0 and 1)
-optimize <- function(saveFile, LL.fun, bounds, initPoints=INIT_POINTS, kappa=KAPPA, utilityThresh=UTILITY_THRESH) {
+optimize <- function(saveFile, LL.fun, bounds, initPoints=16, kappa=5.0, utilityThresh=0.001) {
     if (file.exists(saveFile)) {
         bopt <- readRDS(saveFile)   ## load the cached optimizer
     } else {
@@ -183,6 +183,32 @@ optimize <- function(saveFile, LL.fun, bounds, initPoints=INIT_POINTS, kappa=KAP
 
     bopt
 }
+
+
+## Test for differences in distributions using KS test
+KS <- function(fix) {
+    options(warn=-1)
+    D <- ks.test(fix %>% filter(mw==0) %>% pull(fixdur),
+                 fix %>% filter(mw==1) %>% pull(fixdur),
+                 exact=FALSE)$statistic
+    options(warn=0)
+    return(D)
+}
+
+## Perform a KS test using within-participant permutations
+KS.permutation <- function(fix, n=1000) {
+    fix %>%
+        group_by(ID) %>%
+        nest() %>%
+        expand_grid(permutation=1:n) %>%
+        mutate(data=map(data, ~ mutate(., mw=sample(mw)))) %>%
+        unnest(data) %>%
+        group_by(permutation) %>%
+        nest() %>%
+        mutate(D.null=map_dbl(data, KS),
+               D=KS(fix))
+}
+
 
 
 mw_plot <- function(title, data, binwidth) {
@@ -201,7 +227,7 @@ mw_plot <- function(title, data, binwidth) {
         stat_summary(fun.data=mean_cl_normal, geom='col') +
         stat_summary(fun.data=mean_cl_normal, geom='errorbar', width=.5) +
         scale_fill_jco(name='Probe Response', labels=c('Attentive Viewing', 'Mind Wandering')) +
-        xlab('Fixation Duration (ms)') +
+        scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format()) +
         theme_bw() +
         theme(axis.title.y=element_blank(),
               axis.text.y=element_blank(),
@@ -213,8 +239,9 @@ mw_plot <- function(title, data, binwidth) {
         plot_annotation(title=title)
 }
 
-fit_plot <- function(title, fix) {
-    p.1 <- fix %>% unnest(hist) %>%
+
+mw_hist <- function(fix) {
+    fix %>% unnest(hist) %>%
         ggplot(aes(x=mid, y=p, color=factor(mw), linetype=type)) +
         geom_line(size=.75, show.legend=c(color=FALSE)) +
         scale_linetype_manual(name='', values=c('dotted', 'solid')) +
@@ -224,24 +251,22 @@ fit_plot <- function(title, fix) {
         theme(axis.title.x=element_blank(),
               axis.text.x=element_blank(),
               axis.ticks.x=element_blank())
-    
-    p.2 <- fix %>% unnest(data) %>%
+}
+
+mw_means_plot <- function(fix) {
+    fix %>% unnest(data) %>%
         ggplot() +
         aes(x=fixdur, y=type, fill=factor(mw)) +
         stat_summary(fun.data=mean_cl_normal, geom='col', position=position_dodge(.95)) +
         stat_summary(fun.data=mean_cl_normal, geom='errorbar', width=.5, position=position_dodge(.95)) +
         scale_fill_jco(name='Probe Response', labels=c('Attentive Viewing', 'Mind Wandering')) +
-        xlab('Fixation Duration (s)') +
+        scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format()) +
         theme_bw() +
         theme(axis.title.y=element_blank(),
               axis.ticks.y=element_blank(),
               panel.grid.major.y=element_blank(),
               strip.background=element_blank(),
               strip.text=element_blank())
-    
-    (p.1 / p.2 & coord_cartesian(xlim=c(0, 1))) +
-        plot_layout(heights=c(1, .25), guides='collect') +
-        plot_annotation(title=title)
 }
 
 reciprobit_plot <- function(title, fix, min) {
@@ -267,33 +292,36 @@ reciprobit_plot <- function(title, fix, min) {
         ggtitle(title)    
 }
 
-ecdf_plot <- function(title, fix, max) {
-    fix %>% unnest(data) %>%
-        ggplot(aes(x=fixdur, color=type)) +
-        stat_ecdf() +
-        scale_color_brewer(name='', palette='Set1') +
-        facet_grid( ~ mw, labeller=labeller(mw=c('0'='Attentive Viewing', '1'='Mind Wandering'))) +
-        scale_x_continuous(name='Fixation Duration (s)') +
-        scale_y_continuous(name='Cumulative Probability') +
-        theme_bw() +
-        coord_cartesian(xlim=c(0, max)) +
-        ggtitle(title)
+mw_ecdf_plot <- function(fix, n=5000) {
+    fix %>%
+        unnest(data) %>%
+        ggplot(aes(x=fixdur, group=interaction(mw, type), color=factor(mw), linetype=type)) +
+        stat_ecdf(n=n, geom='line') +
+        scale_color_jco(name='Probe Response', labels=c('Attentive Viewing', 'Mind Wandering')) +
+        scale_linetype_manual(name='', values=c('dotted', 'solid')) +
+        scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format()) +
+        scale_y_continuous(name='Cumulative Probability', expand=c(0, 0)) +
+        coord_cartesian(xlim=c(0, 1)) +
+        theme_bw()
 }
 
-difference_plot <- function(title, fix, max, binwidth) {
+mw_ecdf_difference_plot <- function(fix, n=5000) {
     fix %>%
-        mutate(hist=map(data, ~ discretize(.x$fixdur, 0, max, binwidth))) %>%
-        select(-data) %>%
-        unnest(hist) %>%
-        pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p)) %>%
-        mutate(p_diff=p_mw1-p_mw0) %>%
-        ggplot(aes(x=mid, y=p_diff, color=type, fill=type)) +
+        mutate(ecdf_fun=map(data, ~ ecdf(.$fixdur))) %>%
+        expand_grid(fixdur=seq(0, 2, length.out=n)) %>%
+        mutate(ecdf=map2_dbl(ecdf_fun, fixdur, ~ .x(.y))) %>%
+        select(type, mw, fixdur, ecdf) %>%
+        pivot_wider(names_from=mw, values_from=ecdf) %>%
+        mutate(ecdf_diff=`1` - `0`) %>%
+        ggplot(aes(x=fixdur, y=ecdf_diff, color=type, fill=type)) +
         geom_line() +
         geom_area(alpha=.33, position='identity') +
-        xlab('Fixation Duration (s)') + ylab('Probability Difference\n(Mind Wandering - Attentive Viewing)') +
+        scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format()) +
+        scale_y_continuous(name='Cumulative Probability Difference\n(Mind Wandering - Attentive Viewing)') +
         scale_color_brewer(name='', palette='Set1') +
         scale_fill_brewer(name='', palette='Set1') +
-        theme_bw() + ggtitle(title)
+        coord_cartesian(xlim=c(0, 1)) +
+        theme_bw()
 }
 
 ## Fit LATER on the dataframe df
