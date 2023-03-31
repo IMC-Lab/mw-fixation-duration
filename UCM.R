@@ -440,7 +440,7 @@ aligned_trace_plot <- function(ucm, aligned_states=NULL, n=NULL, fix_ids=NULL, c
         s <- get_aligned_states(ucm)
     
     if (!cancelled)
-        s <- s %>% filter(!is.na(prev_id))
+        s <- s %>% filter(!cancelled)
 
     if (!is.null(fix_ids)) {
         if (is.numeric(fix_ids)) {
@@ -488,17 +488,32 @@ aligned_trace_plot <- function(ucm, aligned_states=NULL, n=NULL, fix_ids=NULL, c
 }
 
 
-cancellations_hist <- function(ucm, max_duration=1.2, binwidth=0.06) {
-    c <- get_cancellations(envs)
-    f <- left_join(get_fixations(envs), c)
+cancellations_hist <- function(ucm, max_duration=1.2, binwidth=0.06, max_cancellations=10) {
+    c <- get_cancellations(ucm)
+    f <- left_join(get_fixations(ucm), c)
     
     f %>%
-        filter(activity_time <= max_diration) %>%
-        mutate(n_cancellations=pmin(n_cancellations, 3)) %>%
-        ggplot(aes(x=activity_time, group=n_cancellations, fill=factor(n_cancellations))) +
+        filter(duration <= max_duration) %>%
+        mutate(n_cancellations=factor(pmin(n_cancellations, max_cancellations),
+                                      levels=0:max_cancellations,
+                                      labels=c(0:(max_cancellations-1), paste0(max_cancellations, '+')))) %>%
+        ggplot(aes(x=duration, group=n_cancellations, fill=n_cancellations)) +
         scale_fill_viridis(name='Cancellations', discrete=TRUE) +
         geom_histogram(aes(y=after_stat(count / sum(count))), binwidth=binwidth) +
-        scale_x_continuous(limits=c(0, 1.2)) +
+        coord_cartesian(xlim=c(0, max_duration)) +
         xlab('Fixation Duration (s)') + ylab('Proportion') +
         theme_bw()
+}
+
+#' For a given set of UCM parameters, calculate the cancellation rate
+#'
+#' @param N_timer the number of states in the timer
+#' @param N_labile the number of states in the labile stage
+#' @param t_timer the mean duration of the timer
+#' @param t_labile the mean duration of the labile stage
+cancellation_prob <- function(N_timer, N_labile, t_timer, t_labile) {
+    r_timer <- N_timer/t_timer
+    r_labile <- N_labile/t_labile
+
+    return(pbeta(r_timer / (r_timer+r_labile), N_timer, N_labile))
 }

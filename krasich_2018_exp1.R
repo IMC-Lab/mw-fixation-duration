@@ -11,7 +11,6 @@ library(ParBayesianOptimization)
 library(scales)
 library(ggallin)
 
-
 ## Load UCM source code
 source('UCM.R')
 source('UCM-optim.R')
@@ -26,9 +25,9 @@ k.MAX_FIXDUR <- 2           ## only keep fixations under this limit
 k.BINWIDTH <- 0.05          ## the width of histogram bins to calculate LL
 k.TRIAL_DUR <- 15           ## trial length (in seconds)
 k.bounds.separate <- list(N_states=c(2L, 30L),
-                          t_timer=c(.1, .4),
-                          t_labile=c(.1, .4),
-                          t_nonlabile=c(.025, .25))
+                          t_timer=c(.15, .375),
+                          t_labile=c(.1, .225),
+                          t_nonlabile=c(.025, .08))
 k.bounds.rate_mod <- c(k.bounds.separate, list(modulation=c(0.25, 1)))
 k.bounds.N_mod <- c(k.bounds.rate_mod, list(N_mod=c(0.25, 1)))
 
@@ -96,7 +95,8 @@ k.ucm.on_task.N_mod <- mclapply(1:10000, function(i) {
         t_motor=k.T_MOTOR, t_execution=k.T_EXECUTION) %>%
         run(k.TRIAL_DUR) %>%
         wrap()
-}) %>%
+})
+k.fix_ucm.on_task.N_mod <- k.ucm.on_task.N_mod %>%
     get_fixations() %>%
     mutate(mw=0, fixdur=duration, type='UCM')  %>%
     filter(fixdur >= k.MIN_FIXDUR & fixdur <= k.MAX_FIXDUR)
@@ -110,7 +110,8 @@ k.ucm.mw.N_mod <- mclapply(1:10000, function(i) {
         t_motor=k.T_MOTOR, t_execution=k.T_EXECUTION, modulation=k.params.N_mod$modulation) %>%
         run(k.TRIAL_DUR) %>%
         wrap()
-}) %>%
+})
+k.fix_ucm.mw.N_mod <- k.ucm.mw.N_mod %>%
     get_fixations() %>%
     mutate(mw=1, fixdur=duration, type='UCM')  %>%
     filter(fixdur >= k.MIN_FIXDUR & fixdur <= k.MAX_FIXDUR)
@@ -154,7 +155,21 @@ k.ll.N_mod <- LL_discrete(k.fix_data.on_task$fixdur, k.fix_ucm.on_task.N_mod$fix
 k.ll.N_mod
 
 
+## calculate cancellation rates
+k.ucm.on_task.N_mod %>%
+    get_cancellations() %>%
+    summarize(M=mean(cancelled))
 
+cancellation_prob(k.params.N_mod$N_states, k.params.N_mod$N_states, ## derived value
+                  k.params.N_mod$t_timer, k.params.N_mod$t_labile)
+
+k.ucm.mw.N_mod %>%
+    get_cancellations() %>%
+    summarize(M=mean(cancelled))
+
+cancellation_prob(round(k.params.N_mod$N_states * k.params.N_mod$N_mod),  ## derived value
+                  round(k.params.N_mod$N_states * k.params.N_mod$N_mod),
+                  k.params.N_mod$t_timer, k.params.N_mod$t_labile)
 
 ##################################################################################################
 ##                               Optimze w/ rate modulation only

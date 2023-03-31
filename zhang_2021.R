@@ -26,9 +26,9 @@ z.MAX_FIXDUR <- 2           ## only keep fixations under this limit
 z.BINWIDTH <- 0.04          ## the width of histogram bins to calculate LL
 z.TRIAL_DUR <- 10           ## trial length (in seconds)
 z.bounds.separate <- list(N_states=c(2L, 30L),
-                          t_timer=c(.1, .4),
-                          t_labile=c(.1, .4),
-                          t_nonlabile=c(.025, .25))
+                          t_timer=c(.15, .375),
+                          t_labile=c(.1, .225),
+                          t_nonlabile=c(.025, .08))
 z.bounds.rate_mod <- c(z.bounds.separate, list(modulation=c(0.25, 1)))
 z.bounds.N_mod <- c(z.bounds.rate_mod, list(N_mod=c(0.25, 1)))
 
@@ -50,7 +50,7 @@ z.fix_data <- read_csv('https://osf.io/fpqsj/download') %>%
     filter(attention != 'MW: Intentional')
 
 ## count number of trials with/without MW
-z.fix_data %>% group_by(subject_nr, s_name, proberesp) %>%
+z.fix_data %>% group_by(ID, s_name, proberesp) %>%
     summarize %>% group_by(proberesp) %>% count
 
 z.fix_data.on_task <- z.fix_data %>% filter(mw == 0)
@@ -91,12 +91,12 @@ ggplot(z.KS, aes(x=D.null)) +
 ##################################################################################################
 ##                      Optimze using rate modulation & N modulation
 ##################################################################################################
-z.bopt.N_mod <- optimize('zhang_2021_N_mod.rds', z.LL.N_mod, z.bounds.N_mod)
+z.bopt.N_mod <- optimize('zhang_2021_N_mod_constrained.rds', z.LL.N_mod, z.bounds.N_mod)
 z.params.N_mod <- getBestPars(z.bopt.N_mod)
 z.params.N_mod
 
 ## Simulate lots of fixations from the best parameter values
-z.fix_ucm.on_task.N_mod <- mclapply(1:10000, function(i) {
+z.ucm.on_task.N_mod <- mclapply(1:10000, function(i) {
     UCM(N_timer=z.params.N_mod$N_states, N_labile=z.params.N_mod$N_states,
         N_nonlabile=z.params.N_mod$N_states, N_motor=z.params.N_mod$N_states,
         N_execution=z.params.N_mod$N_states, t_timer=z.params.N_mod$t_timer,
@@ -104,11 +104,12 @@ z.fix_ucm.on_task.N_mod <- mclapply(1:10000, function(i) {
         t_motor=z.T_MOTOR, t_execution=z.T_EXECUTION) %>%
         run(z.TRIAL_DUR) %>%
         wrap()
-}) %>%
+})
+z.fix_ucm.on_task.N_mod <- z.ucm.on_task.N_mod %>%
     get_fixations() %>%
     mutate(mw=0, fixdur=duration, type='UCM')  %>%
     filter(fixdur >= z.MIN_FIXDUR & fixdur <= z.MAX_FIXDUR)
-z.fix_ucm.mw.N_mod <- mclapply(1:10000, function(i) {
+z.ucm.mw.N_mod <- mclapply(1:10000, function(i) {
     UCM(N_timer=round(z.params.N_mod$N_states * z.params.N_mod$N_mod),
         N_labile=round(z.params.N_mod$N_states * z.params.N_mod$N_mod),
         N_nonlabile=round(z.params.N_mod$N_states * z.params.N_mod$N_mod),
@@ -118,7 +119,9 @@ z.fix_ucm.mw.N_mod <- mclapply(1:10000, function(i) {
         t_motor=z.T_MOTOR, t_execution=z.T_EXECUTION, modulation=z.params.N_mod$modulation) %>%
         run(z.TRIAL_DUR) %>%
         wrap()
-}) %>% get_fixations() %>%
+})
+z.fix_ucm.mw.N_mod <- z.ucm.mw.N_mod %>%
+    get_fixations() %>%
     mutate(mw=1, fixdur=duration, type='UCM')  %>%
     filter(fixdur >= z.MIN_FIXDUR & fixdur <= z.MAX_FIXDUR)
 
@@ -159,21 +162,44 @@ z.ll.N_mod <- LL_discrete(z.fix_data.on_task$fixdur, z.fix_ucm.on_task.N_mod$fix
 z.ll.N_mod
 
 
-(wrap_plots(k.hist.N_mod+ggtitle('Krasich et al. (2018)'),
-            z.hist.N_mod+ggtitle('Zhang et al. (2021)'), k.means.N_mod, z.means.N_mod) &
- coord_cartesian(xlim=c(0, 1)) &
+
+
+(wrap_plots(k.hist.N_mod+ggtitle('Krasich et al. (2018)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
+            z.hist.N_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
+            k.means.N_mod+coord_cartesian(xlim=c(0, 1)),
+            z.means.N_mod+coord_cartesian(xlim=c(0, 1))) &
  theme(legend.position='bottom')) +
-    plot_annotation(tag_levels=list(c('A', 'B', '', ''))) +
+    plot_annotation(tag_levels=list(c('A', 'B', '', '')), title='Full Model') +
     plot_layout(heights=c(1, .33), guides='collect')
 ggsave('plots/fit_Nmod.png', width=9, height=4.5)
 
-(wrap_plots(k.ecdf.N_mod+ggtitle('Krasich et al. (2018)'),
-            z.ecdf.N_mod+ggtitle('Zhang et al. (2021)'),
-            k.ecdf_diff.N_mod, z.ecdf_diff.N_mod) &
- coord_cartesian(xlim=c(0, 1))) +
-    plot_annotation(tag_levels=list(c('A', 'B', '', ''))) +
-    plot_layout(guides='collect')
+
+((k.ecdf.N_mod+ggtitle('Krasich et al. (2018)')+coord_cartesian(xlim=c(0, 1)) |
+  z.ecdf.N_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1))) +
+ plot_layout(guides='collect')) /
+    ((k.ecdf_diff.N_mod+coord_cartesian(xlim=c(0, 1), ylim=c(-.075, .03)) |
+      z.ecdf_diff.N_mod+coord_cartesian(xlim=c(0, 1), ylim=c(-.075, .03))) +
+     plot_layout(guides='collect')) +
+    plot_annotation(tag_levels=list(c('A', 'B', '', '')), title='Full Model')
 ggsave('plots/ecdf_Nmod.png', width=10, height=6)
+
+
+## get cancellation rates
+z.ucm.on_task.N_mod %>%
+    get_cancellations() %>%
+    summarize(M=mean(cancelled))
+
+cancellation_prob(z.params.N_mod$N_states, z.params.N_mod$N_states, ## derived value
+                  z.params.N_mod$t_timer, z.params.N_mod$t_labile)
+
+
+z.ucm.mw.N_mod %>%
+    get_cancellations() %>%
+    summarize(M=mean(cancelled))
+
+cancellation_prob(round(z.params.N_mod$N_states * z.params.N_mod$N_mod),  ## derived value
+                  round(z.params.N_mod$N_states * z.params.N_mod$N_mod),
+                  z.params.N_mod$t_timer, z.params.N_mod$t_labile)
 
 
 
@@ -249,20 +275,22 @@ z.likelihood.ratio
 pchisq(z.likelihood.ratio, df=1, lower.tail=FALSE)
 
 
-(wrap_plots(k.hist.rate_mod+ggtitle('Krasich et al. (2018)'),
-            z.hist.rate_mod+ggtitle('Zhang et al. (2021)'), k.means.rate_mod, z.means.rate_mod) &
- coord_cartesian(xlim=c(0, 1)) &
+(wrap_plots(k.hist.rate_mod+ggtitle('Krasich et al. (2018)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
+            z.hist.rate_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
+            k.means.rate_mod+coord_cartesian(xlim=c(0, 1)),
+            z.means.rate_mod+coord_cartesian(xlim=c(0, 1))) &
  theme(legend.position='bottom')) +
-    plot_annotation(tag_levels=list(c('A', 'B', '', ''))) +
+    plot_annotation(tag_levels=list(c('A', 'B', '', '')), title='Reduced Model') +
     plot_layout(heights=c(1, .33), guides='collect')
 ggsave('plots/fit_ratemod.png', width=9, height=4.5)
 
-(wrap_plots(k.ecdf.rate_mod+ggtitle('Krasich et al. (2018)'),
-            z.ecdf.rate_mod+ggtitle('Zhang et al. (2021)'),
-            k.ecdf_diff.rate_mod, z.ecdf_diff.rate_mod) &
- coord_cartesian(xlim=c(0, 1))) +
-    plot_annotation(tag_levels=list(c('A', 'B', '', ''))) +
-    plot_layout(guides='collect')
+((k.ecdf.rate_mod+ggtitle('Krasich et al. (2018)')+coord_cartesian(xlim=c(0, 1)) |
+  z.ecdf.rate_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1))) +
+ plot_layout(guides='collect')) /
+    ((k.ecdf_diff.rate_mod+coord_cartesian(xlim=c(0, 1), ylim=c(-.075, .03)) |
+      z.ecdf_diff.rate_mod+coord_cartesian(xlim=c(0, 1), ylim=c(-.075, .03))) +
+     plot_layout(guides='collect')) +
+    plot_annotation(tag_levels=list(c('A', 'B', '', '')), title='Reduced Model')
 ggsave('plots/ecdf_ratemod.png', width=10, height=6)
 
 

@@ -116,7 +116,7 @@ LL <- function(x, bounds, n_trials, trial_dur, min, max, binwidth, delta=1/n_tri
         } else {
             ll <- 1:n_trials %>%
                 mclapply(function (i) {
-                    UCM(N_timer=N, N_labile=N, N_nonlabile=N, N_motor=N, N_execution=N,
+                    UCM(N_timer=N, N_labile=N, N_nonlabile=N, N_motor=N_states, N_execution=N_states,  ## only modulate first three stages
                         t_timer=t_timer, t_labile=t_labile, t_nonlabile=t_nonlabile,
                         t_motor=t_motor, t_execution=t_execution, modulation=modulation) %>%
                         run(trial_dur) %>%

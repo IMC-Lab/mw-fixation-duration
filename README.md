@@ -74,7 +74,7 @@ one instance, `replication` is always 1.
 get_states(ucm)
 ```
 
-    ## # A tibble: 1,240 x 7
+    ## # A tibble: 1,240 × 7
     ##      time stage n     replication state cum_state    id
     ##     <dbl> <fct> <chr>       <int> <dbl>     <dbl> <dbl>
     ##  1 0      timer 0               1     0         0     1
@@ -98,7 +98,7 @@ the `end_time`, and the `duration` of every fixation the model has made.
 get_fixations(ucm)
 ```
 
-    ## # A tibble: 15 x 6
+    ## # A tibble: 15 × 6
     ##       id n     replication start_time end_time duration
     ##    <dbl> <chr>       <int>      <dbl>    <dbl>    <dbl>
     ##  1     1 0               1      0.568     1.01   0.437 
@@ -129,7 +129,7 @@ cancelled saccade programs.
 get_cancellations(ucm)
 ```
 
-    ## # A tibble: 20 x 4
+    ## # A tibble: 20 × 4
     ##       id replication cancelled n_cancellations
     ##    <dbl>       <int>     <dbl>           <dbl>
     ##  1     1           1         0               1
@@ -205,37 +205,37 @@ head(ucms, n=3)
 ```
 
     ## [[1]]
-    ## simmer environment: anonymous | now: 30 | next: 30.0124229645319
+    ## simmer environment: anonymous | now: 30 | next: 30.0093411920058
     ## { Monitor:  }
     ## { Source: init. | monitored: 1 | n_generated: 1 }
     ## { Source: timer. | monitored: 2 | n_generated: 122 }
     ## { Source: labile. | monitored: 2 | n_generated: 121 }
-    ## { Source: nonlabile. | monitored: 2 | n_generated: 102 }
-    ## { Source: motor. | monitored: 2 | n_generated: 102 }
-    ## { Source: execution. | monitored: 2 | n_generated: 102 }
-    ## { Source: fixation. | monitored: 2 | n_generated: 102 }
+    ## { Source: nonlabile. | monitored: 2 | n_generated: 99 }
+    ## { Source: motor. | monitored: 2 | n_generated: 99 }
+    ## { Source: execution. | monitored: 2 | n_generated: 99 }
+    ## { Source: fixation. | monitored: 2 | n_generated: 99 }
     ## 
     ## [[2]]
-    ## simmer environment: anonymous | now: 30 | next: 30.0009293520853
+    ## simmer environment: anonymous | now: 30 | next: 30.0011336141098
     ## { Monitor:  }
     ## { Source: init. | monitored: 1 | n_generated: 1 }
-    ## { Source: timer. | monitored: 2 | n_generated: 121 }
-    ## { Source: labile. | monitored: 2 | n_generated: 120 }
-    ## { Source: nonlabile. | monitored: 2 | n_generated: 95 }
-    ## { Source: motor. | monitored: 2 | n_generated: 95 }
-    ## { Source: execution. | monitored: 2 | n_generated: 94 }
-    ## { Source: fixation. | monitored: 2 | n_generated: 94 }
-    ## 
-    ## [[3]]
-    ## simmer environment: anonymous | now: 30 | next: 30.0065443194519
-    ## { Monitor:  }
-    ## { Source: init. | monitored: 1 | n_generated: 1 }
-    ## { Source: timer. | monitored: 2 | n_generated: 123 }
-    ## { Source: labile. | monitored: 2 | n_generated: 122 }
+    ## { Source: timer. | monitored: 2 | n_generated: 116 }
+    ## { Source: labile. | monitored: 2 | n_generated: 115 }
     ## { Source: nonlabile. | monitored: 2 | n_generated: 94 }
     ## { Source: motor. | monitored: 2 | n_generated: 94 }
     ## { Source: execution. | monitored: 2 | n_generated: 94 }
     ## { Source: fixation. | monitored: 2 | n_generated: 94 }
+    ## 
+    ## [[3]]
+    ## simmer environment: anonymous | now: 30 | next: 30.016297300884
+    ## { Monitor:  }
+    ## { Source: init. | monitored: 1 | n_generated: 1 }
+    ## { Source: timer. | monitored: 2 | n_generated: 122 }
+    ## { Source: labile. | monitored: 2 | n_generated: 121 }
+    ## { Source: nonlabile. | monitored: 2 | n_generated: 95 }
+    ## { Source: motor. | monitored: 2 | n_generated: 95 }
+    ## { Source: execution. | monitored: 2 | n_generated: 95 }
+    ## { Source: fixation. | monitored: 2 | n_generated: 95 }
 
 As you can see, `ucms` is a list containg 1000 instances of the UCM. We
 can use the same functions as before on this list to, say, make a
@@ -243,17 +243,7 @@ histogram of fixation durations as a function of the number of
 cancellations within the fixation:
 
 ``` r
-get_fixations(ucms) %>%
-    left_join(get_cancellations(ucms)) %>%
-    filter(duration <= 1.2) %>%
-    mutate(n_cancellations=factor(pmin(n_cancellations, 3),
-                                  labels=c('0', '1', '2', '3+'))) %>%
-    ggplot(aes(x=duration, group=n_cancellations, fill=factor(n_cancellations))) +
-    scale_fill_viridis(name='Cancellations', discrete=TRUE) +
-    geom_histogram(aes(y=after_stat(count / sum(count))), binwidth=0.06) +
-    scale_x_continuous(limits=c(0, 1.2), expand=c(0, 0)) +
-    xlab('Fixation Duration (s)') + ylab('Proportion') +
-    theme_bw()
+cancellations_hist(ucms, max_cancellations=3)
 ggsave('plots/UCM-cancellations.png', width=6, height=4)
 ```
 
