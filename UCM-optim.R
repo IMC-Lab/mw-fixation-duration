@@ -19,7 +19,7 @@ discretize <- function(x, min=0, max=1.2, binwidth=.06) {
     x <- x[x >= min & x <= max]
     h <- hist(x, breaks=breaks, plot=FALSE)
     d <- data.frame(lower=h$breaks[-length(h$breaks)], upper=h$breaks[-1], mid=h$mids,
-                    count=h$counts, p=h$counts/length(x))
+                    count=h$counts, p=h$counts/length(x), density=h$density)
 
     ## set all probabilities to 0 if x is empty
     if (length(x) == 0)
@@ -118,7 +118,7 @@ LL <- function(x, bounds, n_trials, trial_dur, min, max, binwidth, delta=1/n_tri
                 mclapply(function (i) {
                     UCM(N_timer=N, N_labile=N, N_nonlabile=N, N_motor=N_states, N_execution=N_states,  ## only modulate first three stages
                         t_timer=t_timer, t_labile=t_labile, t_nonlabile=t_nonlabile,
-                        t_motor=t_motor, t_execution=t_execution, modulation=modulation) %>%
+                        t_motor=t_motor, t_execution=t_execution, modulation=modulation, mon=0) %>%
                         run(trial_dur) %>%
                         wrap()
                 }) %>%
@@ -209,8 +209,6 @@ KS.permutation <- function(fix, n=1000) {
                D=KS(fix))
 }
 
-
-
 mw_plot <- function(title, data, binwidth) {
     p.1 <- ggplot(data) +
         aes(x=fixdur, fill=factor(mw)) +
@@ -240,17 +238,22 @@ mw_plot <- function(title, data, binwidth) {
 }
 
 
-mw_hist <- function(fix) {
-    fix %>% unnest(hist) %>%
+mw_hist <- function(fix, legend=FALSE, x.axis=FALSE) {
+    p <- fix %>% unnest(hist) %>%
         ggplot(aes(x=mid, y=p, color=factor(mw), linetype=type)) +
-        geom_line(size=.75, show.legend=c(color=FALSE)) +
+        geom_line(size=.75, show.legend=c(color=legend)) +
         scale_linetype_manual(name='', values=c('dotted', 'solid')) +
         scale_color_jco(name='Probe Response', labels=c('Attentive Viewing', 'Mind Wandering')) +
-        xlab('Fixation Duration (s)') + ylab('Proportion') +
-        theme_bw() +
-        theme(axis.title.x=element_blank(),
-              axis.text.x=element_blank(),
-              axis.ticks.x=element_blank())
+        scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format()) +
+        scale_y_continuous('Proportion', labels=no_leading_zeros) +
+        theme_bw()
+
+    if (!x.axis)
+        p <- p +
+            theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.ticks.x=element_blank())
+    p
 }
 
 mw_means_plot <- function(fix) {

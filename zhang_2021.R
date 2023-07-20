@@ -52,6 +52,7 @@ z.fix_data <- read_csv('https://osf.io/fpqsj/download') %>%
 ## count number of trials with/without MW
 z.fix_data %>% group_by(ID, s_name, proberesp) %>%
     summarize %>% group_by(proberesp) %>% count
+z.fix_data %>% group_by(mw) %>% count
 
 z.fix_data.on_task <- z.fix_data %>% filter(mw == 0)
 z.fix_data.mw <- z.fix_data %>% filter(mw == 1)
@@ -91,7 +92,7 @@ ggplot(z.KS, aes(x=D.null)) +
 ##################################################################################################
 ##                      Optimze using rate modulation & N modulation
 ##################################################################################################
-z.bopt.N_mod <- optimize('zhang_2021_N_mod_constrained.rds', z.LL.N_mod, z.bounds.N_mod)
+z.bopt.N_mod <- optimize('zhang_2021_N_mod.rds', z.LL.N_mod, z.bounds.N_mod)
 z.params.N_mod <- getBestPars(z.bopt.N_mod)
 z.params.N_mod
 
@@ -135,6 +136,7 @@ z.fix.N_mod <- bind_rows(z.fix_data %>% select(type, mw, fixdur),
 ## calculate descriptive statistics
 z.fix.N_mod %>%
     mutate(mean=map_dbl(data, ~mean(.x$fixdur*1000)),
+           md=map_dbl(data, ~median(.x$fixdur*1000)),
            sd=map_dbl(data, ~sd(.x$fixdur*1000)),
            lower=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymin),
            upper=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymax)) %>%
@@ -142,7 +144,7 @@ z.fix.N_mod %>%
     as.data.frame
 
 ## plot model fit (histograms/means)
-z.hist.N_mod <- mw_hist(z.fix.N_mod)
+z.hist.N_mod <- mw_hist(z.fix.N_mod, TRUE, TRUE)
 z.means.N_mod <- mw_means_plot(z.fix.N_mod)
 (z.hist.N_mod / z.means.N_mod & coord_cartesian(xlim=c(0, 1))) +
         plot_layout(heights=c(1, .25), guides='collect') +
@@ -163,14 +165,11 @@ z.ll.N_mod
 
 
 
-
 (wrap_plots(k.hist.N_mod+ggtitle('Krasich et al. (2018)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
-            z.hist.N_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
-            k.means.N_mod+coord_cartesian(xlim=c(0, 1)),
-            z.means.N_mod+coord_cartesian(xlim=c(0, 1))) &
+            z.hist.N_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)), ncol=2) &
  theme(legend.position='bottom')) +
     plot_annotation(tag_levels=list(c('A', 'B', '', '')), title='Full Model') +
-    plot_layout(heights=c(1, .33), guides='collect')
+    plot_layout(guides='collect')
 ggsave('plots/fit_Nmod.png', width=9, height=4.5)
 
 
@@ -181,6 +180,7 @@ ggsave('plots/fit_Nmod.png', width=9, height=4.5)
       z.ecdf_diff.N_mod+coord_cartesian(xlim=c(0, 1), ylim=c(-.075, .03))) +
      plot_layout(guides='collect')) +
     plot_annotation(tag_levels=list(c('A', 'B', '', '')), title='Full Model')
+
 ggsave('plots/ecdf_Nmod.png', width=10, height=6)
 
 
@@ -243,6 +243,7 @@ z.fix.rate_mod <- bind_rows(z.fix_data %>% select(type, mw, fixdur),
 ## calculate descriptive statistics
 z.fix.rate_mod %>%
     mutate(mean=map_dbl(data, ~mean(.x$fixdur*1000)),
+           md=map_dbl(data, ~median(.x$fixdur*1000)),
            sd=map_dbl(data, ~sd(.x$fixdur*1000)),
            lower=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymin),
            upper=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymax)) %>%
@@ -250,7 +251,7 @@ z.fix.rate_mod %>%
     as.data.frame
 
 ## plot model fit (histograms/means)
-z.hist.rate_mod <- mw_hist(z.fix.rate_mod)
+z.hist.rate_mod <- mw_hist(z.fix.rate_mod, TRUE, TRUE)
 z.means.rate_mod <- mw_means_plot(z.fix.rate_mod)
 (z.hist.rate_mod / z.means.rate_mod & coord_cartesian(xlim=c(0, 1))) +
         plot_layout(heights=c(1, .25), guides='collect') +
@@ -264,6 +265,98 @@ z.ecdf_diff.rate_mod <- mw_ecdf_difference_plot(z.fix.rate_mod, n=500)
     plot_annotation(title='Zhang et al. (2021)')
 ggsave('plots/ecdf_zhang_2021_rate_mod.png', width=8, height=8)
 
+
+
+
+z.diff <- z.fix.N_mod %>%
+    mutate(type=ifelse(type=='UCM', 'Full Model', type)) %>%
+    bind_rows(z.fix.rate_mod %>% filter(type=='UCM') %>% mutate(type='Reduced Model')) %>%
+    mutate(hist=map(data, ~ discretize(.x$fixdur, min=-1, max=3, binwidth=.00001))) %>%
+    select(-data) %>%
+    unnest(hist) %>%
+    pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p, density)) %>%
+    group_by(type) %>%
+    mutate(diff=density_mw1-density_mw0,
+           diff_smooth=rollmean(diff, k=10000, fill=0, align='center')) %>%
+    ggplot(aes(x=mid, y=diff_smooth, color=type, fill=type)) +
+    geom_line() +
+    geom_area(alpha=.33, position='identity') +
+    scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format(), expand=c(0, 0)) +
+    ylab('Probability Density Difference\n(Mind Wandering - Attentive Viewing)') +
+    ggtitle('Zhang et al. (2021)') +
+    scale_color_brewer(name='', palette='Set1') +
+    scale_fill_brewer(name='', palette='Set1') +
+    coord_cartesian(xlim=c(0, 2)) +
+    theme_bw()
+z.diff
+ggsave('plots/diff_zhang_2021.png', width=8, height=4)
+
+z.diff.loess <- z.fix.N_mod %>%
+    mutate(type=ifelse(type=='UCM', 'Full Model', type)) %>%
+    filter(type=='Data') %>%
+    ##bind_rows(z.fix.rate_mod %>% filter(type=='UCM') %>% mutate(type='Reduced Model')) %>%
+    mutate(hist=map(data, ~ discretize(.x$fixdur, min=-1, max=3, binwidth=.0001))) %>%
+    select(-data) %>%
+    unnest(hist) %>%
+    pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p, density)) %>%
+    group_by(type) %>%
+    mutate(diff=density_mw1-density_mw0,
+           diff_smooth=predict(loess(y~x, data=tibble(x=mid, y=diff), span=1/30, degree=1))) %>%
+    ggplot(aes(x=mid, y=diff_smooth, color=type, fill=type)) +
+    geom_line() +
+    geom_area(alpha=.2, position='identity') +
+    scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format()) +
+    ylab('Probability Density Difference\n(Mind Wandering - Attentive Viewing)') +
+    ggtitle('Zhang et al. (2021)') +
+    scale_color_brewer(name='', palette='Set1') +
+    scale_fill_brewer(name='', palette='Set1') +
+    coord_cartesian(xlim=c(0, 2)) +
+    theme_bw()
+z.diff.loess
+
+ggsave('plots/diff_loess_zhang_2021.png', width=8, height=4)
+
+z.diff.loess2 <- z.fix.N_mod %>%
+    mutate(type=ifelse(type=='UCM', 'Full Model', type)) %>%
+    bind_rows(z.fix.rate_mod %>% filter(type=='UCM') %>% mutate(type='Reduced Model')) %>%
+    mutate(hist=map(data, ~ discretize(.x$fixdur, min=-1, max=3, binwidth=.0001))) %>%
+    select(-data) %>%
+    unnest(hist) %>%
+    pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p, density)) %>%
+    group_by(type) %>%
+    mutate(diff=density_mw1-density_mw0,
+           diff_smooth=predict(loess(y~x, data=tibble(x=mid, y=diff), span=.05, degree=1))) %>%
+    ggplot(aes(x=mid, y=diff_smooth, color=type, fill=type)) +
+    geom_line() +
+    geom_area(alpha=.2, position='identity') +
+    scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format(), expand=c(0, 0)) +
+    ylab('Probability Density Difference\n(Mind Wandering - Attentive Viewing)') +
+    ggtitle('Zhang et al. (2021)') +
+    scale_color_brewer(name='', palette='Set1') +
+    scale_fill_brewer(name='', palette='Set1') +
+    coord_cartesian(xlim=c(0, 2)) +
+    theme_bw()
+z.diff.loess2
+
+ggsave('plots/diff_loess2_zhang_2021.png', width=8, height=4)
+
+((k.diff | z.diff) &
+ coord_cartesian(xlim=c(0, 2), ylim=c(-.7, .3)) &
+ theme(legend.position='bottom')) +
+    plot_layout(guides='collect') +
+    plot_annotation(tag_levels='A')
+ggsave('plots/diff.png', width=9, height=4.5)
+
+
+((k.diff.loess | z.diff.loess) &
+ coord_cartesian(xlim=c(0, 1), ylim=c(-.7, .3)) &
+ theme(legend.position='bottom')) +
+    plot_layout(guides='collect') +
+    plot_annotation(tag_levels='A')
+
+ggsave('plots/diff_loess_0.png', width=9, height=4.5, dpi=500)
+
+
 ## Calculate log-likelihood
 z.ll.rate_mod <- LL_discrete(z.fix_data.on_task$fixdur, z.fix_ucm.on_task.rate_mod$fixdur, min=z.MIN_FIXDUR, max=z.MAX_FIXDUR, binwidth=z.BINWIDTH, delta=1/z.N_TRIALS) +
     LL_discrete(z.fix_data.mw$fixdur, z.fix_ucm.mw.rate_mod$fixdur, min=z.MIN_FIXDUR, max=z.MAX_FIXDUR, binwidth=z.BINWIDTH, delta=1/z.N_TRIALS)
@@ -276,12 +369,10 @@ pchisq(z.likelihood.ratio, df=1, lower.tail=FALSE)
 
 
 (wrap_plots(k.hist.rate_mod+ggtitle('Krasich et al. (2018)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
-            z.hist.rate_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)),
-            k.means.rate_mod+coord_cartesian(xlim=c(0, 1)),
-            z.means.rate_mod+coord_cartesian(xlim=c(0, 1))) &
+            z.hist.rate_mod+ggtitle('Zhang et al. (2021)')+coord_cartesian(xlim=c(0, 1), ylim=c(0, .18)), ncol=2) &
  theme(legend.position='bottom')) +
     plot_annotation(tag_levels=list(c('A', 'B', '', '')), title='Reduced Model') +
-    plot_layout(heights=c(1, .33), guides='collect')
+    plot_layout(guides='collect')
 ggsave('plots/fit_ratemod.png', width=9, height=4.5)
 
 ((k.ecdf.rate_mod+ggtitle('Krasich et al. (2018)')+coord_cartesian(xlim=c(0, 1)) |

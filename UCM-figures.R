@@ -13,10 +13,11 @@ options(mc.cores=parallel::detectCores())
 set.seed(12345678)
 ucm <- UCM() %>%
     run(until=5)
+
 trace_plot(ucm, start=1, end=3) +
-    scale_x_continuous(name='Time (s)', labels=c('0', '.5', '1', '1.5', '2'))
+    scale_x_continuous(name='Time (ms)', labels=~ ms_format()(.-1.0)) +
+    theme(plot.margin=margin(5, 15, 5, 5))
 ggsave('plots/UCM-trace2.png', width=7, height=3.5)
-ggsave('plots/UCM-trace2.pdf', width=7, height=3.5, dpi=1000)
 
 ## get cancellation times
 ucm %>% get_cancellations(time=TRUE) %>%

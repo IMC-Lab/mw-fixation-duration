@@ -42,9 +42,10 @@ k.fix_data <- read_excel('data/MWScenesTriad_datat.xlsx') %>%
     filter(proberesp != 'noprobe' & `5sBins` <= 15 &
            fixdur >= k.MIN_FIXDUR & fixdur <= k.MAX_FIXDUR)
 
-## count number of trials with/without MW
+## count number of trials & fixations with/without MW
 k.fix_data %>% group_by(ID, Image_Duration, proberesp) %>%
     summarize %>% group_by(proberesp) %>% count
+k.fix_data %>% group_by(mw) %>% count
 
 k.fix_data.on_task <- k.fix_data %>% filter(mw==0)
 k.fix_data.mw <- k.fix_data %>% filter(mw==1)
@@ -127,6 +128,7 @@ k.fix.N_mod <- bind_rows(k.fix_data %>% select(type, mw, fixdur),
 k.fix.N_mod %>%
     arrange(type, mw) %>%
     mutate(mean=map_dbl(data, ~mean(.x$fixdur*1000)),
+           md=map_dbl(data, ~median(.x$fixdur*1000)),
            sd=map_dbl(data, ~sd(.x$fixdur*1000)),
            lower=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymin),
            upper=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymax)) %>%
@@ -134,7 +136,7 @@ k.fix.N_mod %>%
     as.data.frame
 
 ## plot model fit (histograms/means)
-k.hist.N_mod <- mw_hist(k.fix.N_mod)
+k.hist.N_mod <- mw_hist(k.fix.N_mod, TRUE, TRUE)
 k.means.N_mod <- mw_means_plot(k.fix.N_mod)
 (k.hist.N_mod / k.means.N_mod & coord_cartesian(xlim=c(0, 1))) +
         plot_layout(heights=c(1, .25), guides='collect') +
@@ -147,6 +149,63 @@ k.ecdf_diff.N_mod <- mw_ecdf_difference_plot(k.fix.N_mod, n=500)
 (k.ecdf.N_mod / k.ecdf_diff.N_mod) +
     plot_annotation(title='Krasich et al. (2018)')
 ggsave('plots/ecdf_krasich_2018_N_mod.png', width=8, height=8)
+
+
+
+
+library(zoo)
+
+## Using rolling average
+k.diff <- k.fix.N_mod %>%
+    mutate(type=ifelse(type=='UCM', 'Full Model', type)) %>%
+    bind_rows(k.fix.rate_mod %>% filter(type=='UCM') %>% mutate(type='Reduced Model')) %>%
+    mutate(hist=map(data, ~ discretize(.x$fixdur, min=-1, max=3, binwidth=.00001))) %>%
+    select(-data) %>%
+    unnest(hist) %>%
+    pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p, density)) %>%
+    group_by(type) %>%
+    mutate(diff=density_mw1-density_mw0,
+           diff_smooth=rollmean(diff, k=10000, fill=0, align='center')) %>%
+    ggplot(aes(x=mid, y=diff_smooth, color=type, fill=type)) +
+    geom_line() +
+    geom_area(alpha=.33, position='identity') +
+    scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format(), expand=c(0, 0)) +
+    ylab('Probability Density Difference\n(Mind Wandering - Attentive Viewing)') +
+    ggtitle('Krasich et al. (2018)') +
+    scale_color_brewer(name='', palette='Set1') +
+    scale_fill_brewer(name='', palette='Set1') +
+    coord_cartesian(xlim=c(0, 2)) +
+    theme_bw()
+k.diff
+ggsave('plots/diff_krasich_2018.png', width=8, height=4)
+
+## using loess
+k.diff.loess <- k.fix.N_mod %>%
+    mutate(type=ifelse(type=='UCM', 'Full Model', type)) %>%
+    filter(type=='Data') %>%
+    bind_rows(k.fix.rate_mod %>% filter(type=='UCM') %>% mutate(type='Reduced Model')) %>%
+    mutate(hist=map(data, ~ discretize(.x$fixdur, min=-1, max=3, binwidth=.0001))) %>%
+    select(-data) %>%
+    unnest(hist) %>%
+    pivot_wider(names_from=mw, names_prefix='mw', values_from=c(count, p, density)) %>%
+    group_by(type) %>%
+    mutate(diff=density_mw1-density_mw0,
+           diff_smooth=predict(loess(y~x, data=tibble(x=mid, y=diff), span=1/30, degree=1))) %>%
+    ggplot(aes(x=mid, y=diff_smooth, color=type, fill=type)) +
+    geom_line() +
+    geom_area(alpha=.2, position='identity') +
+    scale_x_continuous(name='Fixation Duration (ms)', labels=ms_format()) +
+    ylab('Probability Density Difference\n(Mind Wandering - Attentive Viewing)') +
+    ggtitle('Krasich et al. (2018)') +
+    scale_color_brewer(name='', palette='Set1') +
+    scale_fill_brewer(name='', palette='Set1') +
+    coord_cartesian(xlim=c(0, 2)) +
+    theme_bw()
+k.diff.loess
+
+ggsave('plots/diff_loess_krasich_2018.png', width=8, height=4)
+
+
 
 
 ## Calculate log-likelihood
@@ -211,6 +270,7 @@ k.fix.rate_mod <- bind_rows(k.fix_data %>% select(type, mw, fixdur),
 ## calculate descriptive statistics
 k.fix.rate_mod %>%
     mutate(mean=map_dbl(data, ~mean(.x$fixdur*1000)),
+           md=map_dbl(data, ~median(.x$fixdur*1000)),
            sd=map_dbl(data, ~sd(.x$fixdur*1000)),
            lower=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymin),
            upper=map_dbl(data, ~mean_cl_normal(.x$fixdur*1000)$ymax)) %>%
@@ -218,7 +278,7 @@ k.fix.rate_mod %>%
     as.data.frame
 
 ## plot model fit (histograms/means)
-k.hist.rate_mod <- mw_hist(k.fix.rate_mod)
+k.hist.rate_mod <- mw_hist(k.fix.rate_mod, TRUE, TRUE)
 k.means.rate_mod <- mw_means_plot(k.fix.rate_mod)
 (k.hist.rate_mod / k.means.rate_mod & coord_cartesian(xlim=c(0, 1))) +
         plot_layout(heights=c(1, .25), guides='collect') +

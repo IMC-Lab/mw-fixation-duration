@@ -18,7 +18,7 @@
 #'     add_generator('walk', walk, at(0)) %>%
 #'     run()
 #' @export
-randomWalk <- function(.trj=trajectory(), env, N, t, modulation=TRUE) {
+randomWalk <- function(.trj=simmer::trajectory(), env, N, t, modulation=TRUE) {
     if (N <= 0)
         stop('Cannot create a random walk with N<0 states.')
     if (t <= 0)
@@ -28,15 +28,15 @@ randomWalk <- function(.trj=trajectory(), env, N, t, modulation=TRUE) {
     ## If modulation is true, this time is multiplied by the global
     ## attribute 'modulation'.
     wait_time <- ifelse(modulation,
-                        function() rexp(1, get_global(env, 'modulation') * N/t),
+                        function() rexp(1, simmer::get_global(env, 'modulation') * N/t),
                         function() rexp(1, N/t))
     
     .trj %>%
-        set_attribute('state', 0) %>%
-        timeout(wait_time) %>%
-        set_attribute('state', 1, mod='+') %>%
-        rollback(2, check=function() get_attribute(env, 'state') < N-1) %>%
-        timeout(wait_time)
+        simmer::set_attribute('state', 0) %>%
+        simmer::timeout(wait_time) %>%
+        simmer::set_attribute('state', 1, mod='+') %>%
+        simmer::rollback(2, check=function() simmer::get_attribute(env, 'state') < N-1) %>%
+        simmer::timeout(wait_time)
 }
 
 #' Create a simmer environment to simulate the UCM model of fixation durations.
@@ -67,6 +67,7 @@ randomWalk <- function(.trj=trajectory(), env, N, t, modulation=TRUE) {
 #' @param t_motor The mean duration of the motor programming stage (> 0).
 #' @param t_execution The mean duration of the saccade execution stage (> 0).
 #' @param modulation The starting modulation of the timer, labile stage, and nonlabile stage.
+#' @param mon An integer signal for whether to monitor individual state transitions in the UCM (0 = none; 1 = arrivals; 2 = attributes, default)
 #' @return A simmer environment simulating the UCM model.
 #' @examples
 #' ## Run the baseline model for 5 seconds
@@ -77,7 +78,7 @@ randomWalk <- function(.trj=trajectory(), env, N, t, modulation=TRUE) {
 #' @export
 UCM <- function(N_timer=14, N_labile=14, N_nonlabile=14, N_motor=14, N_execution=14,
                 t_timer=.25, t_labile=.175, t_nonlabile=.07, t_motor=.03, t_execution=.02,
-                modulation=1.0) {
+                modulation=1.0, mon=2) {
     if (!all(c(N_timer, N_labile, N_nonlabile, N_motor, N_execution) > 0))
         stop('Cannot create UCM with N < 0')
     if (!all(c(t_timer, t_labile, t_nonlabile, t_motor, t_execution) > 0))
@@ -85,72 +86,72 @@ UCM <- function(N_timer=14, N_labile=14, N_nonlabile=14, N_motor=14, N_execution
     if (modulation <= 0 | modulation > 1)
         stop('Cannot create UCM with modulation <= 0 or > 1')
     
-    s <- simmer()
+    s <- simmer::simmer()
     
     ## create a trajectory for the timer
-    timer <- trajectory() %>%
-        set_attribute('id', function() get_n_generated(s, 'timer.')) %>%
+    timer <- simmer::trajectory() %>%
+        simmer::set_attribute('id', function() simmer::get_n_generated(s, 'timer.')) %>%
         ## cancel any labile programs at the start of a new timer
-        send('cancel-labile') %>%
+        simmer::send('cancel-labile') %>%
         randomWalk(s, N_timer, t_timer, modulation=TRUE) %>%
         ## start a new timer and labile program after completion
-        activate('timer.') %>%
-        activate('labile.')
+        simmer::activate('timer.') %>%
+        simmer::activate('labile.')
     
     ## create a trajectory for the labile stage
-    labile <- trajectory() %>%
-        set_attribute('id', function() get_n_generated(s, 'labile.')) %>%
-        set_attribute('cancelled', 0) %>%
+    labile <- simmer::trajectory() %>%
+        simmer::set_attribute('id', function() simmer::get_n_generated(s, 'labile.')) %>%
+        simmer::set_attribute('cancelled', 0) %>%
         ## cancel if a new timer has started
-        renege_if('cancel-labile',
-                  out=trajectory() %>%
-                      set_attribute('cancelled', 1)) %>%
+        simmer::renege_if('cancel-labile',
+                          out=simmer::trajectory() %>%
+                              simmer::set_attribute('cancelled', 1)) %>%
         randomWalk(s, N_labile, t_labile, modulation=TRUE) %>%
-        set_global('labile_id', function() get_attribute(s, 'id')) %>%
+        simmer::set_global('labile_id', function() simmer::get_attribute(s, 'id')) %>%
         ## start a new nonlabile program after completion
-        activate('nonlabile.')
+        simmer::activate('nonlabile.')
     
     ## create a trajectory for the nonlabile stage
-    nonlabile <- trajectory() %>%
-        set_attribute('id', function() get_global(s, 'labile_id')) %>%
+    nonlabile <- simmer::trajectory() %>%
+        simmer::set_attribute('id', function() simmer::get_global(s, 'labile_id')) %>%
         randomWalk(s, N_nonlabile, t_nonlabile, modulation=TRUE) %>%
-        set_global('nonlabile_id', function() get_attribute(s, 'id')) %>%
+        simmer::set_global('nonlabile_id', function() simmer::get_attribute(s, 'id')) %>%
         ## start a motor program after completion
-        activate('motor.')
+        simmer::activate('motor.')
     
     ## create a trajectory for the motor planning stage
-    motor <- trajectory() %>%
-        set_attribute('id', function() get_global(s, 'nonlabile_id')) %>%
+    motor <- simmer::trajectory() %>%
+        simmer::set_attribute('id', function() simmer::get_global(s, 'nonlabile_id')) %>%
         randomWalk(s, N_motor, t_motor, modulation=FALSE) %>%
-        set_global('motor_id', function() get_attribute(s, 'id')) %>%
+        simmer::set_global('motor_id', function() simmer::get_attribute(s, 'id')) %>%
         ## start a new saccade execution after completion
-        activate('execution.')
+        simmer::activate('execution.')
     
     ## create a trajectory for the saccade execution stage
-    execution <- trajectory() %>%
-        send('end-fixation') %>%
-        set_attribute('id', function() get_global(s, 'motor_id')) %>%
+    execution <- simmer::trajectory() %>%
+        simmer::send('end-fixation') %>%
+        simmer::set_attribute('id', function() simmer::get_global(s, 'motor_id')) %>%
         randomWalk(s, N_execution, t_execution, modulation=FALSE) %>%
-        set_global('execution_id', function() get_attribute(s, 'id')) %>%
-        activate('fixation.')
+        simmer::set_global('execution_id', function() simmer::get_attribute(s, 'id')) %>%
+        simmer::activate('fixation.')
 
     ## create a trajectory for fixations
-    fixation <- trajectory() %>%
-        set_attribute('id', function() get_global(s, 'execution_id')) %>%
-        set_attribute('state', 0) %>%
-        trap('end-fixation') %>%
-        wait()
+    fixation <- simmer::trajectory() %>%
+        simmer::set_attribute('id', function() simmer::get_global(s, 'execution_id')) %>%
+        simmer::set_attribute('state', 0) %>%
+        simmer::trap('end-fixation') %>%
+        simmer::wait()
     
     s %>%
-        add_generator('init.', trajectory() %>%
-                               set_global('modulation', modulation) %>%
-                               activate('timer.'), at(0)) %>%
-        add_generator('timer.', timer, when_activated(), mon=2) %>%
-        add_generator('labile.', labile, when_activated(), mon=2) %>%
-        add_generator('nonlabile.', nonlabile, when_activated(), mon=2) %>%
-        add_generator('motor.', motor, when_activated(), mon=2) %>%
-        add_generator('execution.', execution, when_activated(), mon=2) %>%
-        add_generator('fixation.', fixation, when_activated(), mon=2)
+        simmer::add_generator('init.', simmer::trajectory() %>%
+                                       simmer::set_global('modulation', modulation) %>%
+                                       simmer::activate('timer.'), simmer::at(0)) %>%
+        simmer::add_generator('timer.', timer, simmer::when_activated(), mon=mon) %>%
+        simmer::add_generator('labile.', labile, simmer::when_activated(), mon=mon) %>%
+        simmer::add_generator('nonlabile.', nonlabile, simmer::when_activated(), mon=mon) %>%
+        simmer::add_generator('motor.', motor, simmer::when_activated(), mon=mon) %>%
+        simmer::add_generator('execution.', execution, simmer::when_activated(), mon=mon) %>%
+        simmer::add_generator('fixation.', fixation, simmer::when_activated(), mon=2)
 }
 
 #' Get a dataframe containing all of the IDs of each trajectory.
@@ -165,7 +166,7 @@ UCM <- function(N_timer=14, N_labile=14, N_nonlabile=14, N_motor=14, N_execution
 #' @export
 get_ids <- function(ucm) {
     ucm %>%
-        get_mon_attributes() %>%
+        simmer::get_mon_attributes() %>%
         tibble() %>%
         filter(key=='id') %>%
         select(-time) %>%
@@ -189,7 +190,7 @@ get_ids <- function(ucm) {
 #' @export
 get_cancellations <- function(ucm, time=FALSE) {
     c <- ucm %>%
-        get_mon_attributes() %>%
+        simmer::get_mon_attributes() %>%
         tibble() %>%
         filter(key == 'cancelled') %>%
         separate(name, c('stage', 'n'), sep='\\.') %>%
@@ -240,7 +241,7 @@ get_cancellations <- function(ucm, time=FALSE) {
 #' @export
 get_states <- function(ucm) {
     s <- ucm %>%
-        get_mon_attributes() %>%
+        simmer::get_mon_attributes() %>%
         tibble() %>%
         filter(key == 'state') %>%
         separate(name, c('stage', 'n'), sep='\\.') %>%
@@ -271,7 +272,7 @@ get_states <- function(ucm) {
 #' @export
 get_fixations <- function(ucm) {
     ucm %>%
-        get_mon_arrivals() %>%
+        simmer::get_mon_arrivals() %>%
         tibble() %>%
         separate(name, c('stage', 'n'), sep='\\.') %>%
         filter(stage == 'fixation') %>%
@@ -288,6 +289,14 @@ ms_format <- function() {
     function(x) format(x*1000, digits=2) 
 }
 
+#' Format numbers by removing leading 0's
+no_leading_zeros <- function (x, digits=2) {
+    if (is.character(x))
+        x <- as.numeric(x)
+    
+    str_replace(sprintf('%.2f', x), '0\\.', '\\.')
+}
+
 #' Get a traceplot of UCM's simulation from start to end.
 #'
 #' @param ucm The UCM simmer environment to plot traces for
@@ -301,9 +310,9 @@ ms_format <- function() {
 trace_plot <- function(ucm, start=0, end=NULL, fix_areas=TRUE, cancellations=TRUE) {
     if (is.null(end)) {
         if (is.list(ucm))
-            end <- now(ucm[[1]])
+            end <- simmer::now(ucm[[1]])
         else
-            end <- now(ucm)
+            end <- simmer::now(ucm)
     }
     
     s <- ucm %>%
